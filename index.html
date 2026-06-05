@@ -909,7 +909,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
       </div>
       <div class="g2" style="margin-top:12px">
         <div class="card"><div class="card-t">Comida vs Cena (2026)</div><div class="chart-wrap" style="height:240px"><canvas id="ch-co-serv"></canvas></div></div>
-        <div class="card"><div class="card-t">Ocupación media por centro (2026)</div><div class="chart-wrap" style="height:240px"><canvas id="ch-co-ocu"></canvas></div></div>
+        <div class="card"><div class="card-t">Comensales acumulados por centro · 2025 vs 2026</div><div class="chart-wrap" style="height:240px"><canvas id="ch-co-ocu"></canvas></div></div>
       </div>
       <div class="card" style="margin-top:12px">
         <div class="card-t" id="co-tbl-t">Detalle</div>
@@ -6929,6 +6929,16 @@ function renderComensales() {
   const baseSum26 = ing26.reduce((s,r)=>s+(r.base||0),0);
   const ticketMedio = tot26>0 ? baseSum26/tot26 : null;
 
+  // Ingresos 2025 (del histórico) — mismos filtros, reinterpretados al año anterior.
+  // El histórico guarda el año dentro de la fecha (YYYY-MM-DD), no en un campo aparte.
+  let ing25 = (DB.ingresos_historico||[]).filter(r => String(r.fecha||'').slice(0,4) === '2025');
+  if (centro)  ing25 = ing25.filter(r => r.centro === centro);
+  if (mes)     ing25 = ing25.filter(r => r.mes === mes);
+  if (desde25) ing25 = ing25.filter(r => r.fecha >= desde25);
+  if (hasta25) ing25 = ing25.filter(r => r.fecha <= hasta25);
+  const baseSum25 = ing25.reduce((s,r)=>s+(r.base||0),0);
+  const ticketMedio25 = tot25>0 ? baseSum25/tot25 : null;
+
   // Días con actividad
   const dias26 = new Set(r26.filter(r=>r.comensales>0).map(r=>r.fecha)).size;
   const promedioDiario = dias26>0 ? tot26/dias26 : 0;
@@ -7027,40 +7037,41 @@ function renderComensales() {
     }
   });
 
-  // ── Gráfico Ocupación media por centro (2026) ──
-  // Ignora el filtro de centro para este gráfico — sirve para comparar centros.
+  // ── Gráfico Comensales acumulados por centro · 2025 vs 2026 ──
+  // Ignora el filtro de centro para este gráfico — sirve para comparar centros entre sí.
   let allSinCt = (DB.comensales||[]);
   if (serv) allSinCt = allSinCt.filter(r => r.servicio === serv);
   if (mes)  allSinCt = allSinCt.filter(r => r.mes === mes);
   allSinCt = allSinCt.filter(passFechas);
-  const ocuByCentro = {};
-  allSinCt.filter(r=>r.anio===2026 && r.capacidad>0).forEach(r=>{
-    ocuByCentro[r.centro] = ocuByCentro[r.centro] || {com:0, cap:0};
-    ocuByCentro[r.centro].com += r.comensales;
-    ocuByCentro[r.centro].cap += r.capacidad;
+  const comByCentro = {};
+  allSinCt.forEach(r=>{
+    if (r.anio !== 2025 && r.anio !== 2026) return;
+    comByCentro[r.centro] = comByCentro[r.centro] || {a25:0, a26:0};
+    if (r.anio === 2025) comByCentro[r.centro].a25 += (r.comensales||0);
+    else                 comByCentro[r.centro].a26 += (r.comensales||0);
   });
-  const ctsLbl = Object.keys(ocuByCentro);
-  const ocuVals = ctsLbl.map(c => ocuByCentro[c].cap>0 ? (ocuByCentro[c].com/ocuByCentro[c].cap)*100 : 0);
+  // Orden por comensales 2026 desc (los centros más relevantes primero)
+  const ctsLbl = Object.keys(comByCentro).sort((a,b)=> (comByCentro[b].a26||0)-(comByCentro[a].a26||0));
+  const com25Vals = ctsLbl.map(c => comByCentro[c].a25||0);
+  const com26Vals = ctsLbl.map(c => comByCentro[c].a26||0);
   destroyChart('coOcu');
   charts.coOcu = new Chart(document.getElementById('ch-co-ocu'), {
     type:'bar',
     data:{
       labels: ctsLbl,
-      datasets:[{
-        label:'% Ocupación',
-        data: ocuVals,
-        backgroundColor: ctsLbl.map(c => CCOL[c] || '#888'),
-        borderRadius:3
-      }]
+      datasets:[
+        { label:'2025', data:com25Vals, backgroundColor:'rgba(120,120,120,.55)', borderRadius:3 },
+        { label:'2026', data:com26Vals, backgroundColor:'#1D9E75', borderRadius:3 }
+      ]
     },
     options:{
       responsive:true, maintainAspectRatio:false,
       plugins:{
-        legend:{display:false},
-        tooltip:{callbacks:{label:ctx=>`${ctx.parsed.y.toFixed(1)}%`}}
+        legend:{display:true, position:'top', labels:{boxWidth:12, boxHeight:12, font:{size:11}, padding:12}},
+        tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${fmt(ctx.parsed.y)} comensales`}}
       },
       scales:{
-        y:{beginAtZero:true, max:100, grid:{color:'rgba(128,128,128,.08)'}, ticks:{callback:v=>v+'%'}},
+        y:{beginAtZero:true, grid:{color:'rgba(128,128,128,.08)'}},
         x:{grid:{display:false}}
       }
     }
@@ -7081,6 +7092,11 @@ function renderComensales() {
     const k = keyOf(r);
     ingByKey[k] = (ingByKey[k] || 0) + (r.base || 0);
   });
+  const ingByKey25 = {};
+  ing25.forEach(r => {
+    const k = keyOf(r);
+    ingByKey25[k] = (ingByKey25[k] || 0) + (r.base || 0);
+  });
 
   head.innerHTML = `<tr>
     <th>${col1}</th>
@@ -7089,7 +7105,9 @@ function renderComensales() {
     <th class="tr">Δ</th>
     <th class="tr">Δ %</th>
     <th class="tr">Ingresos 2026</th>
-    <th class="tr">Ticket medio</th>
+    <th class="tr">Ticket medio 2026</th>
+    <th class="tr">Ingresos 2025</th>
+    <th class="tr">Ticket medio 2025</th>
   </tr>`;
   body.innerHTML = allKeys.map(k => {
     const v25 = acc[2025][k]||0;
@@ -7098,6 +7116,8 @@ function renderComensales() {
     const pct = v25>0 ? (v26-v25)/v25 : null;
     const ingK = ingByKey[k] || 0;
     const tmK  = v26>0 ? ingK/v26 : null;
+    const ingK25 = ingByKey25[k] || 0;
+    const tmK25  = v25>0 ? ingK25/v25 : null;
     return `<tr>
       <td>${labelOf(k)}</td>
       <td class="tr">${v25?fmt(v25):'—'}</td>
@@ -7106,8 +7126,10 @@ function renderComensales() {
       <td class="tr">${pct!==null?`<span style="color:${pct>=0?'#1D9E75':'#A32D2D'}">${pct>=0?'+':''}${(pct*100).toFixed(1)}%</span>`:'—'}</td>
       <td class="tr">${ingK>0?'€'+fmt(ingK):'—'}</td>
       <td class="tr">${tmK!==null?'€'+fmt(tmK):'—'}</td>
+      <td class="tr" style="color:#888">${ingK25>0?'€'+fmt(ingK25):'—'}</td>
+      <td class="tr" style="color:#888">${tmK25!==null?'€'+fmt(tmK25):'—'}</td>
     </tr>`;
-  }).join('') || '<tr><td colspan="7" style="text-align:center;color:#aaa;padding:20px">Sin datos</td></tr>';
+  }).join('') || '<tr><td colspan="9" style="text-align:center;color:#aaa;padding:20px">Sin datos</td></tr>';
   const totDev = tot26-tot25, totPct = tot25>0?(tot26-tot25)/tot25:null;
   foot.innerHTML = `<tr class="tr-tot"><td>TOTAL</td>
     <td class="tr">${fmt(tot25)}</td>
@@ -7116,6 +7138,8 @@ function renderComensales() {
     <td class="tr">${totPct!==null?`<span style="color:${totPct>=0?'#1D9E75':'#A32D2D'}">${totPct>=0?'+':''}${(totPct*100).toFixed(1)}%</span>`:'—'}</td>
     <td class="tr">${baseSum26>0?'€'+fmt(baseSum26):'—'}</td>
     <td class="tr">${ticketMedio!==null?'€'+fmt(ticketMedio):'—'}</td>
+    <td class="tr" style="color:#888">${baseSum25>0?'€'+fmt(baseSum25):'—'}</td>
+    <td class="tr" style="color:#888">${ticketMedio25!==null?'€'+fmt(ticketMedio25):'—'}</td>
   </tr>`;
 }
 
