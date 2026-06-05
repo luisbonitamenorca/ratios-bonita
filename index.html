@@ -1405,6 +1405,25 @@ const DB = {
 <script>
 // app.js — Lógica principal · Ratios Food Cost · Bonita Menorca
 const MESES = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+// Convierte un mes a número 1-12. Acepta número (1..12) o nombre en español
+// (con/sin acentos, mayús/minús, nombre completo o abreviado de 3 letras). Devuelve 0 si no reconoce.
+function mesANumero(v) {
+  if (v == null || v === '') return 0;
+  // Caso numérico (number o string de dígitos)
+  if (/^\d+$/.test(String(v).trim())) {
+    const n = parseInt(v, 10);
+    return (n >= 1 && n <= 12) ? n : 0;
+  }
+  // Caso texto: normalizamos a minúsculas y sin acentos
+  const s = v.toString().trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const MAP = {
+    enero:1, ene:1, febrero:2, feb:2, marzo:3, mar:3, abril:4, abr:4,
+    mayo:5, may:5, junio:6, jun:6, julio:7, jul:7, agosto:8, ago:8,
+    septiembre:9, setiembre:9, sep:9, sept:9, set:9,
+    octubre:10, oct:10, noviembre:11, nov:11, diciembre:12, dic:12
+  };
+  return MAP[s] || MAP[s.slice(0,3)] || 0;
+}
 const CENTROS = ['BINIFADET','BODEGA','TAMARINDOS','TAMARINDOS BAR','TIRANT','TIENDA','PRODUCCION','ESTRUCTURA'];
 const CCOL = {
   'BINIFADET':    '#1D9E75',
@@ -5348,7 +5367,7 @@ async function handleXlFile(file) {
         const cols = data[i];
         if (!cols || cols.length === 0) continue;
         const anio = parseInt(cols[0])||0;
-        const mes  = parseInt(cols[1])||0;
+        const mes  = mesANumero(cols[1]);
         const canal = (cols[2]||'').toString().trim().toUpperCase();
         if (!canal || !mes) continue;
         nomRows.push({
