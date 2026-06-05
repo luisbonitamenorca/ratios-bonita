@@ -510,7 +510,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
 
   <!-- MAIN TABS -->
   <nav class="tabs-nav">
-    <button class="tab-btn active" onclick="showTab('dash',this)">General</button>
+    <button class="tab-btn active" onclick="showTab('dash',this)">Ingresos</button>
     <button class="tab-btn" onclick="showTab('semanal',this)">Compras por familia</button>
     <button class="tab-btn" onclick="showTab('subfamilia',this)">Por subfamilia</button>
     <button class="tab-btn" onclick="showTab('control-prod',this)">🔍 Control producto</button>
@@ -537,7 +537,6 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
             <th>Mes</th>
             <th class="tr">Ingresos 26</th><th class="tr">Presupuesto</th><th class="tr">Desv.</th><th class="tr">%</th>
             <th class="tr">Ingresos 25</th><th class="tr">Desv.</th><th class="tr">%</th>
-            <th class="tr">Personal</th><th class="tr">Presupuesto</th><th class="tr">Desv.</th><th class="tr">%</th>
           </tr></thead>
           <tbody id="tb-ing-vs-ppto"></tbody>
           <tbody id="tb-ivp-tot">
@@ -545,38 +544,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
               <td>TOTAL</td>
               <td class="tr" id="tf-ivp-ing"></td><td class="tr" id="tf-ivp-ppto"></td><td class="tr" id="tf-ivp-dev"></td><td class="tr" id="tf-ivp-pct"></td>
               <td class="tr" id="tf-ivp-ing25"></td><td class="tr" id="tf-ivp-dev25"></td><td class="tr" id="tf-ivp-pct25"></td>
-              <td class="tr" id="tf-ivp-nom"></td><td class="tr" id="tf-ivp-pnom"></td><td class="tr" id="tf-ivp-devnom"></td><td class="tr" id="tf-ivp-pctnom"></td>
             </tr>
           </tbody>
           <tbody id="tb-ivp-centros"></tbody>
-        </table></div>
-      </div>
-      <div class="card">
-        <div class="card-t">Resumen por centro</div>
-        <div class="tbl-wrap"><table>
-          <thead><tr>
-            <th>Centro</th>
-            <th class="tr">Ratio personal</th>
-            <th class="tr">Pres. ratio</th>
-            <th class="tr">Comida</th>
-            <th class="tr">Stock comida €</th>
-            <th class="tr">Bebida</th>
-            <th class="tr">Alcohol.</th>
-            <th class="tr">Vino</th>
-            <th class="tr">Vino ext.</th>
-          </tr></thead>
-          <tbody id="tb-resumen"></tbody>
-          <tfoot><tr class="tr-tot" id="tf-resumen-tot">
-            <td>TOTAL</td>
-            <td class="tr" id="tf-res-rper"></td>
-            <td class="tr" id="tf-res-rperp"></td>
-            <td class="tr" id="tf-res-rcomA"></td>
-            <td class="tr" id="tf-res-stockCom"></td>
-            <td class="tr" id="tf-res-rbebA"></td>
-            <td class="tr" id="tf-res-ralcA"></td>
-            <td class="tr" id="tf-res-rvinA"></td>
-            <td class="tr" id="tf-res-rvexA"></td>
-          </tr></tfoot>
         </table></div>
       </div>
     </div>
@@ -1726,26 +1696,11 @@ function renderDashboard() {
       const col = d>=0 ? '#1D9E75' : '#A32D2D';
       return `<td class="tr" style="color:${col}">${d>=0?'+':''}€${fmt(d)}</td>`;
     };
-    // Helper: celda desviación inversa (negativo = verde, positivo = rojo) — para personal
-    const devInv = (real, plan) => {
-      if (plan<=0 && real<=0) return '<td class="tr" style="color:#aaa">—</td>';
-      if (plan<=0) return '<td class="tr" style="color:#aaa">—</td>';
-      const d = real - plan;
-      const col = d<=0 ? '#1D9E75' : '#A32D2D';
-      return `<td class="tr" style="color:${col}">${d>=0?'+':'-'}€${fmt(Math.abs(d))}</td>`;
-    };
     // Helper: celda % cumplimiento (verde si >=100, rojo si <100) — para ingresos
     const pctPos = (real, plan) => {
       if (plan<=0) return '<td class="tr" style="color:#aaa">—</td>';
       const r = real/plan;
       const col = r>=1 ? '#1D9E75' : '#A32D2D';
-      return `<td class="tr" style="color:${col}">${r>=1?'+':''}${((r-1)*100).toFixed(1)}%</td>`;
-    };
-    // Helper: celda % cumplimiento inverso (verde si <=100, rojo si >100) — para personal
-    const pctInv = (real, plan) => {
-      if (plan<=0) return '<td class="tr" style="color:#aaa">—</td>';
-      const r = real/plan;
-      const col = r<=1 ? '#1D9E75' : '#A32D2D';
       return `<td class="tr" style="color:${col}">${r>=1?'+':''}${((r-1)*100).toFixed(1)}%</td>`;
     };
 
@@ -1758,9 +1713,6 @@ function renderDashboard() {
         ${devPos(i,p)}${pctPos(i,p)}
         <td class="tr" style="color:#888">${i25>0?'€'+fmt(i25):'—'}</td>
         ${devPos(i,i25)}${pctPos(i,i25)}
-        <td class="tr">${n>0?'€'+fmt(n):'—'}</td>
-        <td class="tr">${pn>0?'€'+fmt(pn):'—'}</td>
-        ${devInv(n,pn)}${pctInv(n,pn)}
       </tr>`;
     }).join('');
 
@@ -1775,12 +1727,6 @@ function renderDashboard() {
     document.getElementById('tf-ivp-dev25').className  = 'tr';
     document.getElementById('tf-ivp-pct25').innerHTML  = pctPos(totI,totI25).replace(/<\/?td[^>]*>/g,'');
     document.getElementById('tf-ivp-pct25').className  = 'tr';
-    document.getElementById('tf-ivp-nom').textContent  = totNom>0?'€'+fmt(totNom):'—';
-    document.getElementById('tf-ivp-pnom').textContent = totPnom>0?'€'+fmt(totPnom):'—';
-    document.getElementById('tf-ivp-devnom').innerHTML = devInv(totNom,totPnom).replace(/<\/?td[^>]*>/g,'');
-    document.getElementById('tf-ivp-devnom').className = 'tr';
-    document.getElementById('tf-ivp-pctnom').innerHTML = pctInv(totNom,totPnom).replace(/<\/?td[^>]*>/g,'');
-    document.getElementById('tf-ivp-pctnom').className = 'tr';
 
     // ── Filas por centro (acumulado del periodo filtrado) ──
     // Misma estructura que el total, pero agrupando por centro en vez de por mes.
@@ -1821,9 +1767,6 @@ function renderDashboard() {
         ${devPos(i,p)}${pctPos(i,p)}
         <td class="tr" style="color:#888">${i25>0?'€'+fmt(i25):'—'}</td>
         ${devPos(i,i25)}${pctPos(i,i25)}
-        <td class="tr">${n>0?'€'+fmt(n):'—'}</td>
-        <td class="tr">${pn>0?'€'+fmt(pn):'—'}</td>
-        ${devInv(n,pn)}${pctInv(n,pn)}
       </tr>
     `).join('');
   } else {
@@ -1836,105 +1779,6 @@ function renderDashboard() {
     document.getElementById('tb-ivp-centros').innerHTML = '';
   }
 
-  // ── Tabla resumen con ratios por familia ──
-  // Excluimos ESTRUCTURA porque no tiene ingresos directos (su coste se ve en panel Nóminas)
-  // Determinar el set de meses incluidos en el filtro actual para el ratio presupuestado de personal
-  const mesesEnFiltro = (() => {
-    if (m) return new Set([m]);
-    // Si hay rango de fechas, usamos los meses de los ingresos filtrados (ya respeta gd)
-    const s = new Set(ing.map(r=>r.mes).filter(x=>x>0));
-    if (s.size > 0) return s;
-    return null; // sin filtro = todos los meses
-  })();
-  let totI=0, totP=0, totG=0, totN=0;
-  // Periodo del filtro para los cálculos ajustados
-  const { desde: pDesde, hasta: pHasta } = _periodoDashboard(m);
-  // Helper local: pinta una celda de ratio ajustado con tooltip indicando físico/teórico
-  const ratioAjCell = (centroCalc, fam, periodoDesde, periodoHasta) => {
-    const aj = ratioAjFamilia(centroCalc, fam, periodoDesde, periodoHasta);
-    if (!aj || aj.ratio == null) return '<td class="tr" style="background:#f5faf7;color:#aaa">—</td>';
-    const lblTooltip = aj._esAjustado
-      ? `Ajustado · Stock físico: €${fmt(aj._stockFin)} · Compras: €${fmt(aj._compras)} · Ingresos: €${fmt(aj._ingresos)}`
-      : `Bruto (sin inventario físico) · Compras: €${fmt(aj._compras)} · Ingresos: €${fmt(aj._ingresos)}`;
-    const tooltip = lblTooltip;
-    const col = rcol(aj.ratio);
-    return `<td class="tr" style="background:#f5faf7;color:${col};font-weight:500" title="${tooltip}">${fmtPct(aj.ratio)}</td>`;
-  };
-  // Helper local: stock teórico de COMIDA a la fecha "hasta" del periodo.
-  // Se calcula como (compras_comida acumuladas desde 1-enero) − (ingresos_comida × ratio_objetivo).
-  // Si hay anclaje físico, parte del último inventario; si no, desde 0.
-  const stockComidaCell = (centroCalc, hasta) => {
-    if (!hasta) return '<td class="tr" style="color:#aaa">—</td>';
-    const s = stockAtFamilia(centroCalc, 'COMIDA', hasta);
-    if (!s || s.valor == null) return '<td class="tr" style="color:#aaa">—</td>';
-    const tooltip = s.esFisico
-      ? `Inventario físico medido el ${s.fechaAncla}`
-      : (s.fechaAncla
-          ? `Teórico desde último físico (${s.fechaAncla})`
-          : `Teórico desde 1 de enero`);
-    return `<td class="tr" style="color:#555" title="${tooltip}">€${fmt(s.valor)}</td>`;
-  };
-  const rows = CENTROS.filter(ct=>ct!=='ESTRUCTURA').map(ct => {
-    const i = ing.filter(r=>r.centro===ct).reduce((s,r)=>s+r.base,0);
-    const g = gas.filter(r=>r.centro===ct).reduce((s,r)=>s+r.base,0);
-    const p = ppto.filter(r=>r.centro===ct).reduce((s,r)=>s+r.importe,0);
-    const n = nominasCosteCentro(ct, m);
-    if (!i && !g && !p && !n) return '';
-    totI+=i; totP+=p; totG+=g; totN+=n;
-    const rPer = i>0?n/i:null;
-    const rPerPpto = ratioPresupuestoPersonal(ct, mesesEnFiltro);
-    const rCom = ratioFamCentro(ct,'COMIDA',ing,gas);
-    const rBeb = ratioFamCentro(ct,'BEBIDAS',ing,gas);
-    const rAlc = ratioFamCentro(ct,'ALCOHOLES',ing,gas);
-    const rVin = ratioFamCentro(ct,'VINO',ing,gas);
-    const rVex = ratioFamCentro(ct,'VINO EXT',ing,gas);
-    return `<tr>
-      <td><span class="pill ${CPILL[ct]||'b-gray'}">${ct}</span></td>
-      ${ratioCellPersonal(rPer)}${ratioCellPersonal(rPerPpto)}
-      ${ratioAjCell(ct,'COMIDA',pDesde,pHasta)}
-      ${stockComidaCell(ct, pHasta)}
-      ${ratioAjCell(ct,'BEBIDAS',pDesde,pHasta)}
-      ${ratioAjCell(ct,'ALCOHOLES',pDesde,pHasta)}
-      ${ratioAjCell(ct,'VINO',pDesde,pHasta)}
-      ${ratioAjCell(ct,'VINO EXT',pDesde,pHasta)}
-    </tr>`;
-  }).join('');
-
-  document.getElementById('tb-resumen').innerHTML = rows ||
-    '<tr><td colspan="9" style="text-align:center;color:#aaa;padding:20px">Sin datos</td></tr>';
-  // Total ratio personal real
-  const totRPer = totI>0&&totN>0?totN/totI:null;
-  // Total ratio personal presupuestado (suma todos los centros excepto ESTRUCTURA, sobre meses filtrados)
-  const totPnomFiltrado = CENTROS.filter(ct=>ct!=='ESTRUCTURA').reduce((s,ct)=>{
-    return s + (DB.presupuesto_nominas||[]).filter(r=>r.canal===ct && (!mesesEnFiltro || mesesEnFiltro.has(r.mes))).reduce((ss,r)=>ss+(r.importe||0),0);
-  },0);
-  const totPiFiltrado = CENTROS.filter(ct=>ct!=='ESTRUCTURA').reduce((s,ct)=>{
-    return s + (DB.presupuesto||[]).filter(r=>r.centro===ct && (!mesesEnFiltro || mesesEnFiltro.has(r.mes))).reduce((ss,r)=>ss+(r.importe||0),0);
-  },0);
-  const totRPerPpto = totPiFiltrado>0 ? totPnomFiltrado/totPiFiltrado : null;
-  document.getElementById('tf-res-rper').innerHTML  = totRPer!==null?`<span style="color:${rcolP(totRPer)};font-weight:500">${fmtPct(totRPer)}</span>`:'—';
-  document.getElementById('tf-res-rperp').innerHTML = totRPerPpto!==null?`<span style="color:${rcolP(totRPerPpto)};font-weight:500">${fmtPct(totRPerPpto)}</span>`:'—';
-  // Total Stock Comida = suma de stocks de COMIDA de cada centro a la fecha "hasta"
-  let stockComidaTot = 0;
-  let stockComidaCualquiera = false;
-  CENTROS.filter(ct=>ct!=='ESTRUCTURA').forEach(ct => {
-    if (!pHasta) return;
-    const s = stockAtFamilia(ct, 'COMIDA', pHasta);
-    if (s && s.valor != null) { stockComidaTot += s.valor; stockComidaCualquiera = true; }
-  });
-  const elStockCom = document.getElementById('tf-res-stockCom');
-  if (elStockCom) elStockCom.innerHTML = stockComidaCualquiera ? `<span style="color:#555">€${fmt(stockComidaTot)}</span>` : '—';
-  ['COMIDA','BEBIDAS','ALCOHOLES','VINO','VINO EXT'].forEach((fam,idx)=>{
-    const tidsA=['tf-res-rcomA','tf-res-rbebA','tf-res-ralcA','tf-res-rvinA','tf-res-rvexA'];
-    // Total ratio ajustado: sumamos por todos los centros activos
-    const aj = ratioAjFamilia(c||'ALL', fam, pDesde, pHasta);
-    const elA = document.getElementById(tidsA[idx]);
-    if (elA) {
-      elA.innerHTML = (aj && aj.ratio!=null)
-        ? `<span style="color:${rcol(aj.ratio)};font-weight:500" title="${aj._esAjustado?'Ajustado · Stock físico €'+fmt(aj._stockFin)+' · ':'Bruto · '}Compras: €${fmt(aj._compras)}  ·  Ingresos: €${fmt(aj._ingresos)}">${fmtPct(aj.ratio)}</span>`
-        : '—';
-    }
-  });
 }
 
 // ── SEMANAL ────────────────────────────────────────────────────────
