@@ -2535,6 +2535,58 @@ function isoWeek(fecha) {
   return 1 + Math.round(((d - week1) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+   AJUSTES EXTERNOS DE INGRESOS
+   Reubican ventas de una fecha a otra SIN modificar los ficheros de carga ni
+   el dato crudo en Supabase. Se aplican siempre, en memoria, sobre DB.ingresos
+   (al cargar desde Supabase y justo después de subir un Excel).
+   Dakota sigue cargando el dato tal cual; la app re-mapea por defecto.
+   Para añadir otra reclasificación, basta con sumar un objeto a este array.
+   ────────────────────────────────────────────────────────────────────────── */
+const AJUSTES_INGRESOS = [
+  {
+    motivo:       'Evento Simon Mackenzie (fra. TV-BI-25128): facturado el 31/05 pero realizado el 04/06',
+    centro:       'BINIFADET',
+    fechaOrigen:  '2026-05-31',
+    fechaDestino: '2026-06-04',
+    // Identificación quirúrgica: descripción + cantidad exacta.
+    lineas: [
+      { descripcion: 'Evento informal',      cantidad: 131 },
+      { descripcion: 'Puesto paella en vivo', cantidad: 80  },
+      { descripcion: 'Barra libre',           cantidad: 131 },
+    ],
+  },
+];
+
+// Aplica todos los ajustes sobre DB.ingresos (in-place). Idempotente: una vez
+// movida la línea, su fecha ya no coincide con fechaOrigen, así que no se repite.
+function aplicarAjustesIngresos() {
+  if (!Array.isArray(DB.ingresos) || DB.ingresos.length === 0) return;
+  const norm     = s => String(s || '').trim().toLowerCase();
+  const fechaISO = r => String(r.fecha || '').slice(0, 10);
+  for (const aj of AJUSTES_INGRESOS) {
+    const centroAj = String(aj.centro || '').trim().toUpperCase();
+    let movidas = 0;
+    for (const linea of (aj.lineas || [])) {
+      const dWanted = norm(linea.descripcion);
+      const qWanted = Number(linea.cantidad);
+      DB.ingresos
+        .filter(r =>
+          String(r.centro || '').trim().toUpperCase() === centroAj &&
+          fechaISO(r) === aj.fechaOrigen &&
+          norm(r.descripcion) === dWanted &&
+          Number(r.cantidad) === qWanted)
+        .forEach(r => {
+          r.fecha  = aj.fechaDestino;
+          r.semana = isoWeek(aj.fechaDestino);
+          r.mes    = extractMesFromFecha(aj.fechaDestino);
+          movidas++;
+        });
+    }
+    console.log(`[Ajuste ingresos] ${aj.motivo} — ${movidas}/${(aj.lineas || []).length} líneas movidas ${aj.fechaOrigen} → ${aj.fechaDestino}`);
+  }
+}
+
 function loadPaste(type) {
   const ids = { ing:'paste-ing', gas:'paste-gas', ppto:'paste-ppto' };
   const raw = document.getElementById(ids[type]).value.trim();
@@ -4789,6 +4841,7 @@ async function loadFromStorage() {
     DB.ratios_objetivo      = ratios_objetivo      || [];
     DB.productos_controlados= productos_controlados|| [];
     DB.inventarios          = inventarios          || [];
+    aplicarAjustesIngresos();   // reubicación externa de ventas (no toca ficheros ni Supabase)
     invalidateStockCache();
     // Construir índices para resolución dinámica de familia/subfamilia
     rebuildProductIndex();
@@ -5703,6 +5756,7 @@ async function handleXlFile(file) {
     if (visRows.length > 0)       DB.visitas = visRows;
     if (coRows.length > 0)        DB.comensales = coRows;
     if (ingHistRows.length > 0)   DB.ingresos_historico = ingHistRows;
+    aplicarAjustesIngresos();   // aplicar el ajuste también justo tras la carga del Excel
     // Reconstruir índices tras añadir productos nuevos
     rebuildProductIndex();
 
