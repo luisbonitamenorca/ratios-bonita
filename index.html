@@ -1322,7 +1322,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
         <div class="card-t" id="eco-comp-title">Comparativa 2025 vs 2026 por canal</div>
         <div class="tbl-wrap"><table>
           <thead><tr>
-            <th>Canal</th>
+            <th>Canal / familia</th>
             <th class="tr">€ neto 2025</th><th class="tr">€ neto 2026</th><th class="tr">Δ%</th>
             <th class="tr">Botellas 2025</th><th class="tr">Botellas 2026</th><th class="tr">Δ%</th>
           </tr></thead>
@@ -1836,24 +1836,36 @@ function renderEcommerce() {
       <td class="tr" style="color:${colPct(dB)};font-weight:500">${fmtPctSign(dB)}</td>
     </tr>`;
   };
-  // Otras líneas de ingreso (todo el negocio, por familia) en la misma ventana
+  // ── Tabla anexa: INGRESOS POR FAMILIA · centro TIENDA (misma fuente que la
+  //    pestaña Ventas → r.familia sobre ingresos+histórico; debe cuadrar) ──
   const allIng = [...(DB.ingresos_historico||[]), ...(DB.ingresos||[])];
-  const famNeto = (y, fam) => allIng
-    .filter(r => r.familia===fam && (r.fecha||'').substring(0,4)===y && (r.mes||0)>=cmpM1 && (r.mes||0)<=cmpM2)
-    .reduce((s,r)=>s+(r.base||0),0);
-  const famRow = (lbl, fam, col) => {
-    const a = famNeto('2025',fam), b = famNeto('2026',fam), d = dpct(a,b);
+  const tiendaIng = allIng.filter(r => r.centro==='TIENDA' && (r.mes||0)>=cmpM1 && (r.mes||0)<=cmpM2);
+  const famBase = (y,fam) => tiendaIng.filter(r=>r.familia===fam && (r.fecha||'').substring(0,4)===y).reduce((s,r)=>s+(r.base||0),0);
+  const famUds  = (y,fam) => tiendaIng.filter(r=>r.familia===fam && (r.fecha||'').substring(0,4)===y).reduce((s,r)=>s+(r.unidades||0),0);
+  const FAM_COL = {'VINO':'#534AB7','VINO EXT':'#7B4FBB','COMIDA':'#1D9E75','BEBIDAS':'#185FA5','ALCOHOLES':'#BA7517','VISITAS':'#993C1D','ENVIOS':'#3AA0C2','VARIOS':'#888'};
+  const esBot = f => f==='VINO' || f==='VINO EXT';
+  const fams = [...new Set(tiendaIng
+      .filter(r=>['2025','2026'].includes((r.fecha||'').substring(0,4)))
+      .map(r=>(r.familia||'(SIN FAMILIA)')))]
+    .map(f=>({f, b25:famBase('2025',f), b26:famBase('2026',f), u25:famUds('2025',f), u26:famUds('2026',f)}))
+    .sort((a,b)=>(b.b25+b.b26)-(a.b25+a.b26));
+  const tB25=fams.reduce((s,x)=>s+x.b25,0), tB26=fams.reduce((s,x)=>s+x.b26,0);
+  const tU25=fams.filter(x=>esBot(x.f)).reduce((s,x)=>s+x.u25,0), tU26=fams.filter(x=>esBot(x.f)).reduce((s,x)=>s+x.u26,0);
+  const dash = '<td class="tr" style="color:#bbb">—</td>';
+  const famHdr = `<tr><td colspan="7" style="padding-top:12px;font-size:10px;color:#999;font-weight:700;text-transform:uppercase;letter-spacing:.04em">Ingresos por familia · centro Tienda</td></tr>`;
+  const famRowF = (x) => {
+    const dE=dpct(x.b25,x.b26), dU=dpct(x.u25,x.u26);
+    const botCells = esBot(x.f)
+      ? `<td class="tr">${fmtN(x.u25)}</td><td class="tr">${fmtN(x.u26)}</td><td class="tr" style="color:${colPct(dU)};font-weight:500">${fmtPctSign(dU)}</td>`
+      : dash+dash+dash;
     return `<tr>
-      <td><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${col};margin-right:6px"></span>${lbl}</td>
-      <td class="tr">${fmtEur(a)}</td>
-      <td class="tr">${fmtEur(b)}</td>
-      <td class="tr" style="color:${colPct(d)};font-weight:500">${fmtPctSign(d)}</td>
-      <td class="tr" style="color:#bbb">—</td>
-      <td class="tr" style="color:#bbb">—</td>
-      <td class="tr" style="color:#bbb">—</td>
+      <td><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${FAM_COL[x.f]||'#888'};margin-right:6px"></span>${x.f}</td>
+      <td class="tr">${fmtEur(x.b25)}</td>
+      <td class="tr">${fmtEur(x.b26)}</td>
+      <td class="tr" style="color:${colPct(dE)};font-weight:500">${fmtPctSign(dE)}</td>
+      ${botCells}
     </tr>`;
   };
-  const otrosHdr = `<tr><td colspan="7" style="padding-top:12px;font-size:10px;color:#999;font-weight:700;text-transform:uppercase;letter-spacing:.04em">Otras líneas de ingreso · todo el negocio</td></tr>`;
 
   document.getElementById('tb-eco-comp').innerHTML =
     compRow('Online', CANAL_COL.online, y25.online, y26.online) +
@@ -1866,10 +1878,15 @@ function renderEcommerce() {
       <td class="tr">${fmtN(y25.total.bot)}</td><td class="tr">${fmtN(y26.total.bot)}</td>
       <td class="tr" style="color:${colPct(dpct(y25.total.bot,y26.total.bot))};font-weight:500">${fmtPctSign(dpct(y25.total.bot,y26.total.bot))}</td>
     </tr>` +
-    otrosHdr +
-    famRow('Envíos',  'ENVIOS',  '#185FA5') +
-    famRow('Visitas', 'VISITAS', '#993C1D') +
-    famRow('Varios',  'VARIOS',  '#888');
+    famHdr +
+    fams.map(famRowF).join('') +
+    `<tr class="tr-tot">
+      <td>TOTAL TIENDA</td>
+      <td class="tr">${fmtEur(tB25)}</td><td class="tr">${fmtEur(tB26)}</td>
+      <td class="tr" style="color:${colPct(dpct(tB25,tB26))};font-weight:500">${fmtPctSign(dpct(tB25,tB26))}</td>
+      <td class="tr">${fmtN(tU25)}</td><td class="tr">${fmtN(tU26)}</td>
+      <td class="tr" style="color:${colPct(dpct(tU25,tU26))};font-weight:500">${fmtPctSign(dpct(tU25,tU26))}</td>
+    </tr>`;
 
   const labelsCmp = ['Online','Envío tienda','Sin envío'];
   const eur25 = [y25.online.neto, y25.envio_tienda.neto, y25.sin_envio.neto].map(v=>+v.toFixed(0));
