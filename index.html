@@ -1283,7 +1283,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
           <tbody id="tb-eco-canal"></tbody>
           <tfoot><tr class="tr-tot"><td>TOTAL</td><td class="tr" id="tf-eco-ped"></td><td class="tr" id="tf-eco-neto"></td><td class="tr" id="tf-eco-bot"></td><td class="tr" id="tf-eco-tm"></td><td class="tr" id="tf-eco-pb"></td><td class="tr" id="tf-eco-env"></td></tr></tfoot>
         </table></div>
-      </div>
+        <div style="font-size:11px;color:#999;margin-top:8px;line-height:1.5">
+          <strong>Online</strong> y <strong>Envío tienda</strong> salen de Shopify. <strong>Sin envío</strong> es el residuo: total de vino de Tienda en Ágora (mismo dato que la pestaña Vino) menos online menos envío — son ventas en bodega sin envío, que no pasan por Shopify y por eso no tienen pedidos ni ticket medio individuales.
+        </div>
 
       <div class="g2" style="margin-top:12px">
         <div class="card"><div class="card-t">Ticket medio por canal (€/pedido)</div><div class="chart-wrap" style="height:240px"><canvas id="ch-eco-tm"></canvas></div></div>
@@ -1606,120 +1608,150 @@ function renderEcommerce() {
   const canal = fget('eco-canal');
   const CANAL_LBL = { online:'Online', envio_tienda:'Envío tienda', sin_envio:'Sin envío' };
   const CANAL_COL = { online:'#185FA5', envio_tienda:'#534AB7', sin_envio:'#1D9E75' };
-  const CANAL_ORD = ['online','envio_tienda','sin_envio'];
   const PAIS_LBL = { ES:'España', FR:'Francia', DE:'Alemania', NL:'Países Bajos',
     GB:'Reino Unido', IT:'Italia', CH:'Suiza', BE:'Bélgica', PT:'Portugal',
     SE:'Suecia', DK:'Dinamarca', LU:'Luxemburgo', AT:'Austria', PL:'Polonia',
     IE:'Irlanda', US:'Estados Unidos', IM:'Isla de Man', SI:'Eslovenia', FI:'Finlandia' };
 
-  const rows = (DB.ecommerce||[]).filter(r =>
-    (!año   || (r.fecha||'').substring(0,4) === año) &&
-    (!canal || r.canal === canal)
-  );
-
-  const agg = list => {
+  // ── Datos Shopify (solo canales con seguimiento: online + envío tienda) ──
+  const shop = (DB.ecommerce||[]).filter(r => (!año || (r.fecha||'').substring(0,4)===año));
+  const aggShop = list => {
     const ped = list.length;
     const neto = list.reduce((s,r)=>s+(r.neto_sin_iva||0),0);
     const bot  = list.reduce((s,r)=>s+(r.botellas||0),0);
     const env  = list.reduce((s,r)=>s+(r.envio||0),0);
     return { ped, neto, bot, env, tm: ped?neto/ped:0, pb: bot?neto/bot:0 };
   };
-  const T = agg(rows);
+  const online = aggShop(shop.filter(r=>r.canal==='online'));
+  const envio  = aggShop(shop.filter(r=>r.canal==='envio_tienda'));
 
-  // ── Métricas ──
+  // ── Ancla Ágora: TOTAL TIENDA de vino (misma fuente que la pestaña Vino) ──
+  const anchorRows = [...(DB.ingresos_historico||[]), ...(DB.ingresos||[])].filter(r =>
+    r.familia==='VINO' && VINOS[r.subfamilia] && r.centro==='TIENDA' &&
+    (!año || (r.fecha||'').substring(0,4)===año)
+  );
+  const anchorBot  = anchorRows.reduce((s,r)=>s+(r.unidades||0),0);
+  const anchorBase = anchorRows.reduce((s,r)=>s+(r.base||0),0);
+
+  // ── Sin envío = residuo (total tienda − online − envío) ──
+  const sinBot  = Math.max(0, Math.round(anchorBot - online.bot - envio.bot));
+  const sinNeto = anchorBase - online.neto - envio.neto;
+  const sin = { ped:null, neto:sinNeto, bot:sinBot, env:0, tm:null, pb: sinBot? sinNeto/sinBot : 0 };
+
+  // Objeto por canal para tabla/KPIs
+  const dataC = { online, envio_tienda: envio, sin_envio: sin };
+  const totPed   = online.ped + envio.ped;        // pedidos trazables (Shopify)
+  const totNeto  = anchorBase;                     // = online + envío + sin envío
+  const totBot   = Math.round(anchorBot);
+  const totEnv   = online.env + envio.env;
+  const totTm    = totPed ? (online.neto+envio.neto)/totPed : 0;
+  const totPb    = totBot ? anchorBase/totBot : 0;
+
+  // Métricas — dependen del filtro de canal
+  let mNeto, mBot, mPed, mTm, mPb, mEnv;
+  if (canal === 'online' || canal === 'envio_tienda') {
+    const a = dataC[canal]; mNeto=a.neto; mBot=a.bot; mPed=a.ped; mTm=a.tm; mPb=a.pb; mEnv=a.env;
+  } else if (canal === 'sin_envio') {
+    mNeto=sin.neto; mBot=sin.bot; mPed=null; mTm=null; mPb=sin.pb; mEnv=0;
+  } else {
+    mNeto=totNeto; mBot=totBot; mPed=totPed; mTm=totTm; mPb=totPb; mEnv=totEnv;
+  }
+  const orDash = (v, f) => v==null ? '—' : f(v);
   document.getElementById('eco-metrics').innerHTML = `
-    <div class="mc"><div class="lbl">Venta neta tienda</div><div class="val">€${fmtK(T.neto)}</div></div>
-    <div class="mc"><div class="lbl">Botellas</div><div class="val">${fmtN(T.bot)}</div></div>
-    <div class="mc"><div class="lbl">Pedidos</div><div class="val">${fmtN(T.ped)}</div></div>
-    <div class="mc"><div class="lbl">Ticket medio</div><div class="val">${fmtEur(T.tm)}</div></div>
-    <div class="mc"><div class="lbl">€ / botella</div><div class="val">${fmtEur(T.pb)}</div></div>
-    <div class="mc"><div class="lbl">Envío facturado</div><div class="val">€${fmtK(T.env)}</div></div>
+    <div class="mc"><div class="lbl">Venta neta tienda</div><div class="val">€${fmtK(mNeto)}</div></div>
+    <div class="mc"><div class="lbl">Botellas</div><div class="val">${fmtN(mBot)}</div></div>
+    <div class="mc"><div class="lbl">Pedidos${canal===''?' (envíos)':''}</div><div class="val">${orDash(mPed, fmtN)}</div></div>
+    <div class="mc"><div class="lbl">Ticket medio${canal===''?' (envíos)':''}</div><div class="val">${orDash(mTm, fmtEur)}</div></div>
+    <div class="mc"><div class="lbl">€ / botella</div><div class="val">${fmtEur(mPb)}</div></div>
+    <div class="mc"><div class="lbl">Envío facturado</div><div class="val">€${fmtK(mEnv)}</div></div>
   `;
 
   // ── Tabla por canal ──
-  const canalesPresentes = CANAL_ORD.filter(c => rows.some(r=>r.canal===c));
-  const tbCanal = document.getElementById('tb-eco-canal');
-  tbCanal.innerHTML = canalesPresentes.map(c => {
-    const a = agg(rows.filter(r=>r.canal===c));
-    return `<tr>
+  const filaCanal = (c, a) => `<tr>
       <td><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${CANAL_COL[c]};margin-right:6px"></span>${CANAL_LBL[c]}</td>
-      <td class="tr">${fmtN(a.ped)}</td>
+      <td class="tr">${orDash(a.ped, fmtN)}</td>
       <td class="tr">${fmtEur(a.neto)}</td>
       <td class="tr">${fmtN(a.bot)}</td>
-      <td class="tr">${fmtEur(a.tm)}</td>
+      <td class="tr">${orDash(a.tm, fmtEur)}</td>
       <td class="tr">${fmtEur(a.pb)}</td>
       <td class="tr">${fmtEur(a.env)}</td>
     </tr>`;
-  }).join('') || `<tr><td colspan="7" style="text-align:center;color:#aaa;padding:18px">Sin datos. Carga el Excel "NURIA" en la pestaña de carga.</td></tr>`;
-  document.getElementById('tf-eco-ped').textContent  = fmtN(T.ped);
-  document.getElementById('tf-eco-neto').textContent = fmtEur(T.neto);
-  document.getElementById('tf-eco-bot').textContent  = fmtN(T.bot);
-  document.getElementById('tf-eco-tm').textContent   = fmtEur(T.tm);
-  document.getElementById('tf-eco-pb').textContent   = fmtEur(T.pb);
-  document.getElementById('tf-eco-env').textContent  = fmtEur(T.env);
+  const canalesShow = canal ? [canal] : ['online','envio_tienda','sin_envio'];
+  document.getElementById('tb-eco-canal').innerHTML =
+    canalesShow.map(c => filaCanal(c, dataC[c])).join('')
+    || `<tr><td colspan="7" style="text-align:center;color:#aaa;padding:18px">Sin datos.</td></tr>`;
+  document.getElementById('tf-eco-ped').textContent  = canal? orDash(dataC[canal].ped,fmtN) : fmtN(totPed);
+  document.getElementById('tf-eco-neto').textContent = fmtEur(canal? dataC[canal].neto : totNeto);
+  document.getElementById('tf-eco-bot').textContent  = fmtN(canal? dataC[canal].bot : totBot);
+  document.getElementById('tf-eco-tm').textContent   = canal? orDash(dataC[canal].tm,fmtEur) : orDash(totTm,fmtEur);
+  document.getElementById('tf-eco-pb').textContent   = fmtEur(canal? dataC[canal].pb : totPb);
+  document.getElementById('tf-eco-env').textContent  = fmtEur(canal? dataC[canal].env : totEnv);
 
-  // ── Gráficos comparativa (ticket medio y €/botella por canal) ──
-  const aggByCanal = c => agg(rows.filter(r=>r.canal===c));
-  const labelsC = canalesPresentes.map(c=>CANAL_LBL[c]);
-  const colorsC = canalesPresentes.map(c=>CANAL_COL[c]);
+  // ── Gráficos comparativa (ticket medio y €/botella) ──
+  // Ticket medio: solo canales con pedidos reales (online + envío)
   destroyChart('ecoTm');
   charts.ecoTm = new Chart(document.getElementById('ch-eco-tm'), {
     type:'bar',
-    data:{ labels:labelsC, datasets:[{ data:canalesPresentes.map(c=>+aggByCanal(c).tm.toFixed(2)), backgroundColor:colorsC, borderRadius:3 }] },
+    data:{ labels:['Online','Envío tienda'], datasets:[{ data:[+online.tm.toFixed(2),+envio.tm.toFixed(2)], backgroundColor:[CANAL_COL.online,CANAL_COL.envio_tienda], borderRadius:3 }] },
     options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false},
-      tooltip:{callbacks:{label:ctx=>`${fmtEur(ctx.parsed.y)} / pedido`}} },
-      scales:{ y:{ ticks:{ callback:v=>'€'+v } } } }
+      tooltip:{callbacks:{label:ctx=>`${fmtEur(ctx.parsed.y)} / pedido`}} }, scales:{ y:{ ticks:{ callback:v=>'€'+v } } } }
   });
   destroyChart('ecoPb');
   charts.ecoPb = new Chart(document.getElementById('ch-eco-pb'), {
     type:'bar',
-    data:{ labels:labelsC, datasets:[{ data:canalesPresentes.map(c=>+aggByCanal(c).pb.toFixed(2)), backgroundColor:colorsC, borderRadius:3 }] },
+    data:{ labels:['Online','Envío tienda','Sin envío'], datasets:[{ data:[+online.pb.toFixed(2),+envio.pb.toFixed(2),+sin.pb.toFixed(2)], backgroundColor:[CANAL_COL.online,CANAL_COL.envio_tienda,CANAL_COL.sin_envio], borderRadius:3 }] },
     options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false},
-      tooltip:{callbacks:{label:ctx=>`${fmtEur(ctx.parsed.y)} / botella`}} },
-      scales:{ y:{ ticks:{ callback:v=>'€'+v } } } }
+      tooltip:{callbacks:{label:ctx=>`${fmtEur(ctx.parsed.y)} / botella`}} }, scales:{ y:{ ticks:{ callback:v=>'€'+v } } } }
   });
 
-  // ── Evolución por semana ISO (barras apiladas por canal) ──
-  const semset = [...new Set(rows.map(r=>r.semana).filter(s=>s>0))].sort((a,b)=>a-b);
-  const dsCanales = canalesPresentes.map(c => ({
-    label: CANAL_LBL[c],
-    backgroundColor: CANAL_COL[c],
-    data: semset.map(sm => +rows.filter(r=>r.semana===sm && r.canal===c).reduce((s,r)=>s+(r.neto_sin_iva||0),0).toFixed(0))
-  }));
+  // ── Evolución por semana ISO (€ neto, apilado) ──
+  const onlW={}, envW={}, ancW={};
+  shop.filter(r=>r.canal==='online').forEach(r=>{ onlW[r.semana]=(onlW[r.semana]||0)+(r.neto_sin_iva||0); });
+  shop.filter(r=>r.canal==='envio_tienda').forEach(r=>{ envW[r.semana]=(envW[r.semana]||0)+(r.neto_sin_iva||0); });
+  anchorRows.forEach(r=>{ if(r.semana>0) ancW[r.semana]=(ancW[r.semana]||0)+(r.base||0); });
+  const semset = [...new Set([...Object.keys(ancW),...Object.keys(onlW),...Object.keys(envW)].map(Number).filter(s=>s>0))].sort((a,b)=>a-b);
+  const dsAll = [
+    { key:'online',       label:'Online',       color:CANAL_COL.online,       data: semset.map(s=>+(onlW[s]||0).toFixed(0)) },
+    { key:'envio_tienda', label:'Envío tienda', color:CANAL_COL.envio_tienda, data: semset.map(s=>+(envW[s]||0).toFixed(0)) },
+    { key:'sin_envio',    label:'Sin envío',    color:CANAL_COL.sin_envio,    data: semset.map(s=>+Math.max(0,(ancW[s]||0)-(onlW[s]||0)-(envW[s]||0)).toFixed(0)) },
+  ];
+  const dsShow = (canal ? dsAll.filter(d=>d.key===canal) : dsAll)
+    .map(d=>({ label:d.label, backgroundColor:d.color, data:d.data }));
   destroyChart('ecoSem');
   charts.ecoSem = new Chart(document.getElementById('ch-eco-sem'), {
     type:'bar',
-    data:{ labels:semset.map(s=>'S'+s), datasets:dsCanales },
+    data:{ labels:semset.map(s=>'S'+s), datasets:dsShow },
     options:{ responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},
         tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: €${fmtK(ctx.parsed.y)}`}} },
       scales:{ x:{stacked:true}, y:{stacked:true, ticks:{callback:v=>'€'+fmtK(v)}} } }
   });
 
-  // ── Por país ──
-  const byKey = (keyFn) => {
-    const m = {};
-    rows.forEach(r => { const k = keyFn(r); if (k==null||k==='') return; (m[k] = m[k]||[]).push(r); });
-    return Object.entries(m).map(([k,list]) => ({ k, ...agg(list) })).sort((a,b)=>b.neto-a.neto);
+  // ── País y provincia (solo canales Shopify: online + envío) ──
+  // Sin envío no tiene destino (venta local en bodega).
+  let geoRows = shop.filter(r => r.canal==='online' || r.canal==='envio_tienda');
+  if (canal === 'online' || canal === 'envio_tienda') geoRows = shop.filter(r=>r.canal===canal);
+  const geoEmpty = (canal === 'sin_envio');
+  const aggGeo = list => { const neto=list.reduce((s,r)=>s+(r.neto_sin_iva||0),0), bot=list.reduce((s,r)=>s+(r.botellas||0),0); return {ped:list.length,neto,bot,pb:bot?neto/bot:0}; };
+  const byKey = (rows, keyFn) => {
+    const m={}; rows.forEach(r=>{const k=keyFn(r); if(k==null||k==='') return; (m[k]=m[k]||[]).push(r);});
+    return Object.entries(m).map(([k,list])=>({k,...aggGeo(list)})).sort((a,b)=>b.neto-a.neto);
   };
-  const fmtRow = (label) => (o) => `<tr>
-      <td>${label(o.k)}</td>
-      <td class="tr">${fmtN(o.ped)}</td>
-      <td class="tr">${fmtEur(o.neto)}</td>
-      <td class="tr">${fmtN(o.bot)}</td>
-      <td class="tr">${fmtEur(o.pb)}</td>
-    </tr>`;
-  const paises = byKey(r=>r.pais);
-  document.getElementById('tb-eco-pais').innerHTML = paises.map(fmtRow(k=>`${PAIS_LBL[k]||k} <span style="color:#aaa;font-size:11px">${k}</span>`)).join('')
-    || `<tr><td colspan="5" style="text-align:center;color:#aaa;padding:12px">—</td></tr>`;
-
-  // ── España por provincia ──
-  const provRows = rows.filter(r=>r.pais==='ES' && (r.provincia||'').trim());
-  const mProv = {};
-  provRows.forEach(r => { (mProv[r.provincia]=mProv[r.provincia]||[]).push(r); });
-  const provs = Object.entries(mProv).map(([k,list])=>({k,...agg(list)})).sort((a,b)=>b.neto-a.neto);
-  document.getElementById('tb-eco-prov').innerHTML = provs.map(fmtRow(k=>k)).join('')
-    || `<tr><td colspan="5" style="text-align:center;color:#aaa;padding:12px">—</td></tr>`;
+  const fmtGeoRow = label => o => `<tr>
+      <td>${label(o.k)}</td><td class="tr">${fmtN(o.ped)}</td><td class="tr">${fmtEur(o.neto)}</td>
+      <td class="tr">${fmtN(o.bot)}</td><td class="tr">${fmtEur(o.pb)}</td></tr>`;
+  if (geoEmpty) {
+    const msg = `<tr><td colspan="5" style="text-align:center;color:#aaa;padding:12px">Sin envío = venta local en bodega, sin destino.</td></tr>`;
+    document.getElementById('tb-eco-pais').innerHTML = msg;
+    document.getElementById('tb-eco-prov').innerHTML = msg;
+  } else {
+    const paises = byKey(geoRows, r=>r.pais);
+    document.getElementById('tb-eco-pais').innerHTML = paises.map(fmtGeoRow(k=>`${PAIS_LBL[k]||k} <span style="color:#aaa;font-size:11px">${k}</span>`)).join('')
+      || `<tr><td colspan="5" style="text-align:center;color:#aaa;padding:12px">—</td></tr>`;
+    const provs = byKey(geoRows.filter(r=>r.pais==='ES' && (r.provincia||'').trim()), r=>r.provincia);
+    document.getElementById('tb-eco-prov').innerHTML = provs.map(fmtGeoRow(k=>k)).join('')
+      || `<tr><td colspan="5" style="text-align:center;color:#aaa;padding:12px">—</td></tr>`;
+  }
 }
 
 function renderAll() { 
