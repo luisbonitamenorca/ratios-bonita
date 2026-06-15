@@ -1327,7 +1327,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
           </span>
         </div>
 
-        <input type="file" id="xl-input" accept=".xlsx,.xls" style="display:none" onchange="handleXlFile(this.files[0])">
+        <input type="file" id="xl-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleXlFile(this.files[0])">
 
         <div class="drop-zone" id="xl-drop"
           onclick="document.getElementById('xl-input').click()"
@@ -1336,7 +1336,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
           ondrop="event.preventDefault();this.classList.remove('drag-over');handleXlFile(event.dataTransfer.files[0])">
           <div class="drop-icon">📊</div>
           <div class="drop-title">Arrastra el Excel aquí o haz clic para buscarlo</div>
-          <div class="drop-sub">El Excel puede contener cualquier subconjunto de las pestañas — el sistema detecta automáticamente qué cargar</div>
+          <div class="drop-sub">El Excel puede contener cualquier subconjunto de las pestañas — el sistema detecta automáticamente qué cargar. También acepta el <strong>CSV de Shopify</strong> (fichero NURIA), sin necesidad de convertirlo.</div>
         </div>
 
         <div class="xl-progress" id="xl-progress" style="display:none">
@@ -5197,8 +5197,8 @@ function xlDate(val) {
 async function handleXlFile(file) {
   if (!file) return;
   const ext = file.name.split('.').pop().toLowerCase();
-  if (!['xlsx','xls'].includes(ext)) {
-    alert('Formato no válido. Usa .xlsx o .xls');
+  if (!['xlsx','xls','csv'].includes(ext)) {
+    alert('Formato no válido. Usa .xlsx, .xls o .csv');
     return;
   }
 
@@ -5213,11 +5213,17 @@ async function handleXlFile(file) {
     if (ico) { ico.textContent = '○'; ico.className = 'sheet-wait'; }
   });
 
-  // Leer el Excel con SheetJS
+  // Leer el fichero con SheetJS. CSV → texto UTF-8 (preserva acentos);
+  // Excel (.xlsx/.xls) → buffer binario.
   let wb;
   try {
-    const buf = await file.arrayBuffer();
-    wb = XLSX.read(buf, {type:'array', cellDates:true});
+    if (ext === 'csv') {
+      const text = await file.text();
+      wb = XLSX.read(text, {type:'string', cellDates:true});
+    } else {
+      const buf = await file.arrayBuffer();
+      wb = XLSX.read(buf, {type:'array', cellDates:true});
+    }
   } catch(e) {
     document.getElementById('xl-msg').textContent = '⚠ Error al leer el archivo: ' + e.message;
     document.getElementById('xl-msg').style.color = 'var(--red)';
@@ -5248,8 +5254,9 @@ async function handleXlFile(file) {
     'INGRESOS 2025':         'Ingresos 2025 (histórico)',
   };
   const hojasPresentes = wb.SheetNames.filter(n => HOJAS_CONOCIDAS[n]);
-  if (hojasPresentes.length === 0) {
-    document.getElementById('xl-msg').textContent = '⚠ Este Excel no contiene ninguna pestaña reconocida. Pestañas esperadas: ' + Object.keys(HOJAS_CONOCIDAS).join(', ');
+  const ecoSheetDetectada = findEcommerceSheet(wb);   // detección por firma de columnas (fichero NURIA)
+  if (hojasPresentes.length === 0 && !ecoSheetDetectada) {
+    document.getElementById('xl-msg').textContent = '⚠ Este archivo no contiene ninguna pestaña reconocida. Pestañas esperadas: ' + Object.keys(HOJAS_CONOCIDAS).join(', ') + ', o un export de Shopify (NURIA).';
     document.getElementById('xl-msg').style.color = 'var(--red)';
     return;
   }
