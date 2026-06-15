@@ -1836,17 +1836,40 @@ function renderEcommerce() {
       <td class="tr" style="color:${colPct(dB)};font-weight:500">${fmtPctSign(dB)}</td>
     </tr>`;
   };
+  // Otras líneas de ingreso (todo el negocio, por familia) en la misma ventana
+  const allIng = [...(DB.ingresos_historico||[]), ...(DB.ingresos||[])];
+  const famNeto = (y, fam) => allIng
+    .filter(r => r.familia===fam && (r.fecha||'').substring(0,4)===y && (r.mes||0)>=cmpM1 && (r.mes||0)<=cmpM2)
+    .reduce((s,r)=>s+(r.base||0),0);
+  const famRow = (lbl, fam, col) => {
+    const a = famNeto('2025',fam), b = famNeto('2026',fam), d = dpct(a,b);
+    return `<tr>
+      <td><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${col};margin-right:6px"></span>${lbl}</td>
+      <td class="tr">${fmtEur(a)}</td>
+      <td class="tr">${fmtEur(b)}</td>
+      <td class="tr" style="color:${colPct(d)};font-weight:500">${fmtPctSign(d)}</td>
+      <td class="tr" style="color:#bbb">—</td>
+      <td class="tr" style="color:#bbb">—</td>
+      <td class="tr" style="color:#bbb">—</td>
+    </tr>`;
+  };
+  const otrosHdr = `<tr><td colspan="7" style="padding-top:12px;font-size:10px;color:#999;font-weight:700;text-transform:uppercase;letter-spacing:.04em">Otras líneas de ingreso · todo el negocio</td></tr>`;
+
   document.getElementById('tb-eco-comp').innerHTML =
     compRow('Online', CANAL_COL.online, y25.online, y26.online) +
     compRow('Envío tienda', CANAL_COL.envio_tienda, y25.envio_tienda, y26.envio_tienda) +
     compRow('Sin envío', CANAL_COL.sin_envio, y25.sin_envio, y26.sin_envio) +
     `<tr class="tr-tot">
-      <td>TOTAL</td>
+      <td>TOTAL VINO (Tienda)</td>
       <td class="tr">${fmtEur(y25.total.neto)}</td><td class="tr">${fmtEur(y26.total.neto)}</td>
       <td class="tr" style="color:${colPct(dpct(y25.total.neto,y26.total.neto))};font-weight:500">${fmtPctSign(dpct(y25.total.neto,y26.total.neto))}</td>
       <td class="tr">${fmtN(y25.total.bot)}</td><td class="tr">${fmtN(y26.total.bot)}</td>
       <td class="tr" style="color:${colPct(dpct(y25.total.bot,y26.total.bot))};font-weight:500">${fmtPctSign(dpct(y25.total.bot,y26.total.bot))}</td>
-    </tr>`;
+    </tr>` +
+    otrosHdr +
+    famRow('Envíos',  'ENVIOS',  '#185FA5') +
+    famRow('Visitas', 'VISITAS', '#993C1D') +
+    famRow('Varios',  'VARIOS',  '#888');
 
   const labelsCmp = ['Online','Envío tienda','Sin envío'];
   const eur25 = [y25.online.neto, y25.envio_tienda.neto, y25.sin_envio.neto].map(v=>+v.toFixed(0));
