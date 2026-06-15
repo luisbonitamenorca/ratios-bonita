@@ -523,6 +523,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
     <button class="tab-btn" onclick="showTab('comensales',this)">🍽️ Comensales</button>
     <button class="tab-btn" onclick="showTab('clasif',this)">🏷️ Clasificación</button>
     <button class="tab-btn" onclick="showTab('inventarios',this)">📦 Inventarios</button>
+    <button class="tab-btn" onclick="showTab('ecommerce',this)">🛍️ Ecommerce</button>
   </nav>
 
   <main class="content">
@@ -1267,6 +1268,51 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
       </div>
     </div>
 
+    <!-- ══════════════ ECOMMERCE (Shopify) ══════════════ -->
+    <div id="tab-ecommerce" class="tab-pane">
+      <div class="fbar">
+        <span class="fbar-label">Año</span><button class="fbtn" onclick="fset(this,'eco-año','',renderEcommerce)">Todos</button><button class="fbtn active" onclick="fset(this,'eco-año','2026',renderEcommerce)">2026</button>
+        <span class="fbar-label">Canal</span><button class="fbtn active" onclick="fset(this,'eco-canal','',renderEcommerce)">Todos</button><button class="fbtn" onclick="fset(this,'eco-canal','online',renderEcommerce)">Online</button><button class="fbtn" onclick="fset(this,'eco-canal','envio_tienda',renderEcommerce)">Envío tienda</button><button class="fbtn" onclick="fset(this,'eco-canal','sin_envio',renderEcommerce)">Sin envío</button>
+      </div>
+      <div id="eco-metrics" class="metrics-row"></div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="card-t">Resumen por canal</div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Canal</th><th class="tr">Pedidos</th><th class="tr">€ neto (s/IVA)</th><th class="tr">Botellas</th><th class="tr">Ticket medio</th><th class="tr">€/botella</th><th class="tr">Envío €</th></tr></thead>
+          <tbody id="tb-eco-canal"></tbody>
+          <tfoot><tr class="tr-tot"><td>TOTAL</td><td class="tr" id="tf-eco-ped"></td><td class="tr" id="tf-eco-neto"></td><td class="tr" id="tf-eco-bot"></td><td class="tr" id="tf-eco-tm"></td><td class="tr" id="tf-eco-pb"></td><td class="tr" id="tf-eco-env"></td></tr></tfoot>
+        </table></div>
+      </div>
+
+      <div class="g2" style="margin-top:12px">
+        <div class="card"><div class="card-t">Ticket medio por canal (€/pedido)</div><div class="chart-wrap" style="height:240px"><canvas id="ch-eco-tm"></canvas></div></div>
+        <div class="card"><div class="card-t">Precio medio por botella (€/bot)</div><div class="chart-wrap" style="height:240px"><canvas id="ch-eco-pb"></canvas></div></div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="card-t">Evolución por semana ISO — € neto por canal</div>
+        <div class="chart-wrap" style="height:280px"><canvas id="ch-eco-sem"></canvas></div>
+      </div>
+
+      <div class="g2" style="margin-top:12px">
+        <div class="card">
+          <div class="card-t">Por país</div>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>País</th><th class="tr">Pedidos</th><th class="tr">€ neto</th><th class="tr">Botellas</th><th class="tr">€/botella</th></tr></thead>
+            <tbody id="tb-eco-pais"></tbody>
+          </table></div>
+        </div>
+        <div class="card">
+          <div class="card-t">España — por provincia</div>
+          <div class="tbl-wrap" style="max-height:420px;overflow:auto"><table>
+            <thead><tr><th>Provincia</th><th class="tr">Pedidos</th><th class="tr">€ neto</th><th class="tr">Botellas</th><th class="tr">€/botella</th></tr></thead>
+            <tbody id="tb-eco-prov"></tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ══════════════ CARGA EXCEL ══════════════ -->
     <div id="tab-carga-excel" class="tab-pane">
       <div class="card">
@@ -1304,6 +1350,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
             <div class="xl-sheet-row"><span class="sheet-name">📊 PRESUPUESTO NOMINAS</span><span class="sheet-count" id="xl-pnom-count">Esperando...</span><span class="sheet-wait" id="xl-pnom-ico">○</span></div>
             <div class="xl-sheet-row"><span class="sheet-name">🎫 CODETICKETS (visitas)</span><span class="sheet-count" id="xl-vi-count">Esperando...</span><span class="sheet-wait" id="xl-vi-ico">○</span></div>
             <div class="xl-sheet-row"><span class="sheet-name">🍽️ COVERMANAGER (comensales)</span><span class="sheet-count" id="xl-co-count">Esperando...</span><span class="sheet-wait" id="xl-co-ico">○</span></div>
+            <div class="xl-sheet-row"><span class="sheet-name">🛍️ NURIA (ecommerce Shopify)</span><span class="sheet-count" id="xl-eco-count">Esperando...</span><span class="sheet-wait" id="xl-eco-ico">○</span></div>
           </div>
           <div id="xl-msg" style="margin-top:12px;font-size:13px;font-weight:500;text-align:center"></div>
         </div>
@@ -1554,6 +1601,127 @@ function getPpto(c,m) { return DB.presupuesto.filter(r=>(!c||c==='ALL'||r.centro
 function destroyChart(id) { if (charts[id]) { charts[id].destroy(); charts[id] = null; } }
 function extractMes(fecha) { try { return new Date(fecha).getMonth()+1; } catch { return 0; } }
 
+function renderEcommerce() {
+  const año   = fget('eco-año');
+  const canal = fget('eco-canal');
+  const CANAL_LBL = { online:'Online', envio_tienda:'Envío tienda', sin_envio:'Sin envío' };
+  const CANAL_COL = { online:'#185FA5', envio_tienda:'#534AB7', sin_envio:'#1D9E75' };
+  const CANAL_ORD = ['online','envio_tienda','sin_envio'];
+  const PAIS_LBL = { ES:'España', FR:'Francia', DE:'Alemania', NL:'Países Bajos',
+    GB:'Reino Unido', IT:'Italia', CH:'Suiza', BE:'Bélgica', PT:'Portugal',
+    SE:'Suecia', DK:'Dinamarca', LU:'Luxemburgo', AT:'Austria', PL:'Polonia',
+    IE:'Irlanda', US:'Estados Unidos', IM:'Isla de Man', SI:'Eslovenia', FI:'Finlandia' };
+
+  const rows = (DB.ecommerce||[]).filter(r =>
+    (!año   || (r.fecha||'').substring(0,4) === año) &&
+    (!canal || r.canal === canal)
+  );
+
+  const agg = list => {
+    const ped = list.length;
+    const neto = list.reduce((s,r)=>s+(r.neto_sin_iva||0),0);
+    const bot  = list.reduce((s,r)=>s+(r.botellas||0),0);
+    const env  = list.reduce((s,r)=>s+(r.envio||0),0);
+    return { ped, neto, bot, env, tm: ped?neto/ped:0, pb: bot?neto/bot:0 };
+  };
+  const T = agg(rows);
+
+  // ── Métricas ──
+  document.getElementById('eco-metrics').innerHTML = `
+    <div class="mc"><div class="lbl">Venta neta tienda</div><div class="val">€${fmtK(T.neto)}</div></div>
+    <div class="mc"><div class="lbl">Botellas</div><div class="val">${fmtN(T.bot)}</div></div>
+    <div class="mc"><div class="lbl">Pedidos</div><div class="val">${fmtN(T.ped)}</div></div>
+    <div class="mc"><div class="lbl">Ticket medio</div><div class="val">${fmtEur(T.tm)}</div></div>
+    <div class="mc"><div class="lbl">€ / botella</div><div class="val">${fmtEur(T.pb)}</div></div>
+    <div class="mc"><div class="lbl">Envío facturado</div><div class="val">€${fmtK(T.env)}</div></div>
+  `;
+
+  // ── Tabla por canal ──
+  const canalesPresentes = CANAL_ORD.filter(c => rows.some(r=>r.canal===c));
+  const tbCanal = document.getElementById('tb-eco-canal');
+  tbCanal.innerHTML = canalesPresentes.map(c => {
+    const a = agg(rows.filter(r=>r.canal===c));
+    return `<tr>
+      <td><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${CANAL_COL[c]};margin-right:6px"></span>${CANAL_LBL[c]}</td>
+      <td class="tr">${fmtN(a.ped)}</td>
+      <td class="tr">${fmtEur(a.neto)}</td>
+      <td class="tr">${fmtN(a.bot)}</td>
+      <td class="tr">${fmtEur(a.tm)}</td>
+      <td class="tr">${fmtEur(a.pb)}</td>
+      <td class="tr">${fmtEur(a.env)}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="7" style="text-align:center;color:#aaa;padding:18px">Sin datos. Carga el Excel "NURIA" en la pestaña de carga.</td></tr>`;
+  document.getElementById('tf-eco-ped').textContent  = fmtN(T.ped);
+  document.getElementById('tf-eco-neto').textContent = fmtEur(T.neto);
+  document.getElementById('tf-eco-bot').textContent  = fmtN(T.bot);
+  document.getElementById('tf-eco-tm').textContent   = fmtEur(T.tm);
+  document.getElementById('tf-eco-pb').textContent   = fmtEur(T.pb);
+  document.getElementById('tf-eco-env').textContent  = fmtEur(T.env);
+
+  // ── Gráficos comparativa (ticket medio y €/botella por canal) ──
+  const aggByCanal = c => agg(rows.filter(r=>r.canal===c));
+  const labelsC = canalesPresentes.map(c=>CANAL_LBL[c]);
+  const colorsC = canalesPresentes.map(c=>CANAL_COL[c]);
+  destroyChart('ecoTm');
+  charts.ecoTm = new Chart(document.getElementById('ch-eco-tm'), {
+    type:'bar',
+    data:{ labels:labelsC, datasets:[{ data:canalesPresentes.map(c=>+aggByCanal(c).tm.toFixed(2)), backgroundColor:colorsC, borderRadius:3 }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false},
+      tooltip:{callbacks:{label:ctx=>`${fmtEur(ctx.parsed.y)} / pedido`}} },
+      scales:{ y:{ ticks:{ callback:v=>'€'+v } } } }
+  });
+  destroyChart('ecoPb');
+  charts.ecoPb = new Chart(document.getElementById('ch-eco-pb'), {
+    type:'bar',
+    data:{ labels:labelsC, datasets:[{ data:canalesPresentes.map(c=>+aggByCanal(c).pb.toFixed(2)), backgroundColor:colorsC, borderRadius:3 }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false},
+      tooltip:{callbacks:{label:ctx=>`${fmtEur(ctx.parsed.y)} / botella`}} },
+      scales:{ y:{ ticks:{ callback:v=>'€'+v } } } }
+  });
+
+  // ── Evolución por semana ISO (barras apiladas por canal) ──
+  const semset = [...new Set(rows.map(r=>r.semana).filter(s=>s>0))].sort((a,b)=>a-b);
+  const dsCanales = canalesPresentes.map(c => ({
+    label: CANAL_LBL[c],
+    backgroundColor: CANAL_COL[c],
+    data: semset.map(sm => +rows.filter(r=>r.semana===sm && r.canal===c).reduce((s,r)=>s+(r.neto_sin_iva||0),0).toFixed(0))
+  }));
+  destroyChart('ecoSem');
+  charts.ecoSem = new Chart(document.getElementById('ch-eco-sem'), {
+    type:'bar',
+    data:{ labels:semset.map(s=>'S'+s), datasets:dsCanales },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},
+        tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: €${fmtK(ctx.parsed.y)}`}} },
+      scales:{ x:{stacked:true}, y:{stacked:true, ticks:{callback:v=>'€'+fmtK(v)}} } }
+  });
+
+  // ── Por país ──
+  const byKey = (keyFn) => {
+    const m = {};
+    rows.forEach(r => { const k = keyFn(r); if (k==null||k==='') return; (m[k] = m[k]||[]).push(r); });
+    return Object.entries(m).map(([k,list]) => ({ k, ...agg(list) })).sort((a,b)=>b.neto-a.neto);
+  };
+  const fmtRow = (label) => (o) => `<tr>
+      <td>${label(o.k)}</td>
+      <td class="tr">${fmtN(o.ped)}</td>
+      <td class="tr">${fmtEur(o.neto)}</td>
+      <td class="tr">${fmtN(o.bot)}</td>
+      <td class="tr">${fmtEur(o.pb)}</td>
+    </tr>`;
+  const paises = byKey(r=>r.pais);
+  document.getElementById('tb-eco-pais').innerHTML = paises.map(fmtRow(k=>`${PAIS_LBL[k]||k} <span style="color:#aaa;font-size:11px">${k}</span>`)).join('')
+    || `<tr><td colspan="5" style="text-align:center;color:#aaa;padding:12px">—</td></tr>`;
+
+  // ── España por provincia ──
+  const provRows = rows.filter(r=>r.pais==='ES' && (r.provincia||'').trim());
+  const mProv = {};
+  provRows.forEach(r => { (mProv[r.provincia]=mProv[r.provincia]||[]).push(r); });
+  const provs = Object.entries(mProv).map(([k,list])=>({k,...agg(list)})).sort((a,b)=>b.neto-a.neto);
+  document.getElementById('tb-eco-prov').innerHTML = provs.map(fmtRow(k=>k)).join('')
+    || `<tr><td colspan="5" style="text-align:center;color:#aaa;padding:12px">—</td></tr>`;
+}
+
 function renderAll() { 
   // Estado de datos (cabecera global) se refresca siempre, no depende de la pestaña activa
   pintaFrescura();
@@ -1569,6 +1737,7 @@ function renderAll() {
     'resumen-vino': renderVino,
     'control-prod': renderControlProd,
     'salarios': renderSalarios,
+    'ecommerce': renderEcommerce,
   };
   if (renders[id]) renders[id]();
 }
@@ -1590,6 +1759,7 @@ function showTab(id, btn) {
     'comensales':      renderComensales,
     'clasif':          renderClasif,
     'inventarios':     renderInventarios,
+    'ecommerce':       renderEcommerce,
     'control-prod':    () => { populateCpFamilias(); populateCpSubfamilias(); renderControlProd(); },
     'salarios':        renderSalarios,
   };
@@ -4795,6 +4965,7 @@ async function loadFromStorage() {
       'ratios_objetivo': 'familia',
       'productos_controlados': 'id_prod',
       'inventarios': 'fecha_cierre',
+      'ecommerce': 'pedido_id',
     };
     async function loadAll(table) {
       const rows = [];
@@ -4817,7 +4988,7 @@ async function loadFromStorage() {
       console.warn(`[carga] Falló ${table}:`, e.message);
       return [];
     });
-    const [ingresos, gastos, presupuesto, rrhh, nominas, presupuesto_nominas, visitas, comensales, ingresos_historico, productos_agora, productos_dijit, familias, subfamilias, ratios_objetivo, productos_controlados, inventarios, rrhh_excepciones, rrhh_puestos] = await Promise.all([
+    const [ingresos, gastos, presupuesto, rrhh, nominas, presupuesto_nominas, visitas, comensales, ingresos_historico, productos_agora, productos_dijit, familias, subfamilias, ratios_objetivo, productos_controlados, inventarios, rrhh_excepciones, rrhh_puestos, ecommerce] = await Promise.all([
       loadAll('ingresos'),
       loadAll('gastos'),
       loadAll('presupuesto'),
@@ -4836,6 +5007,7 @@ async function loadFromStorage() {
       safeLoad('inventarios'),
       safeLoad('rrhh_excepciones'),
       safeLoad('rrhh_puestos'),
+      safeLoad('ecommerce'),
     ]);
     DB.ingresos             = ingresos             || [];
     DB.gastos               = gastos               || [];
@@ -4855,6 +5027,7 @@ async function loadFromStorage() {
     DB.ratios_objetivo      = ratios_objetivo      || [];
     DB.productos_controlados= productos_controlados|| [];
     DB.inventarios          = inventarios          || [];
+    DB.ecommerce            = ecommerce            || [];
     aplicarAjustesIngresos();   // reubicación externa de ventas (no toca ficheros ni Supabase)
     invalidateStockCache();
     // Construir índices para resolución dinámica de familia/subfamilia
@@ -5033,7 +5206,7 @@ async function handleXlFile(file) {
   document.getElementById('xl-progress').style.display = 'block';
   document.getElementById('xl-bar').style.width = '0%';
   document.getElementById('xl-msg').textContent = '';
-  ['ing','gas','ppto','rrhh','pa','pd'].forEach(k => {
+  ['ing','gas','ppto','rrhh','pa','pd','eco'].forEach(k => {
     const cnt = document.getElementById('xl-'+k+'-count');
     const ico = document.getElementById('xl-'+k+'-ico');
     if (cnt) cnt.textContent = 'Esperando...';
@@ -5118,6 +5291,113 @@ async function handleXlFile(file) {
       });
     }
     return result;
+  }
+
+  // ── Parser ECOMMERCE (Shopify · fichero "NURIA", una sola hoja) ──────────
+  // Una fila por PEDIDO. El export de Shopify trae una fila por línea de
+  // pedido; las columnas de cabecera (Financial Status, Subtotal…) solo
+  // aparecen en la primera línea de cada pedido. Clasificamos:
+  //   online        = Source 'web'
+  //   envio_tienda  = draft order CON método de envío
+  //   sin_envio     = draft order SIN método de envío (recogida en bodega)
+  // Venta = Subtotal SIN IVA (se quita a cada pedido su propio tipo, leído del
+  // nombre del impuesto; las exportaciones fuera de UE ya vienen sin IVA).
+  // Botellas: 1 ud = 1 botella salvo equivalencias; fuera regalo y sacacorchos.
+  const ECO_BOT = {
+    'enviar para regalo': 0,
+    'sacacorchos binifadet': 0,
+    '2 tanca - magnum (1.5 l)': 2,
+    'tanca - pack de regalo 3 botellas': 3,
+    'buri espumoso rosado. pack preventa 6 botellas.': 6,
+    'buri espumoso blanco. pack preventa 6 botellas': 6,
+    'pack vino para camaleones': 6,
+  };
+  const ecoBotellas = (nombre, qty) => {
+    const k = String(nombre||'').trim().toLowerCase();
+    const eq = (k in ECO_BOT) ? ECO_BOT[k] : 1;
+    return eq * qty;
+  };
+  const ecoRate = name => {
+    const m = String(name||'').match(/(\d+[.,]?\d*)\s*%/);
+    return m ? parseFloat(m[1].replace(',','.'))/100 : 0;
+  };
+  const ecoFecha = v => {
+    if (v instanceof Date) return xlDate(v);
+    const s = String(v||'').trim();
+    const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+    return m ? m[1] : xlDate(s);
+  };
+  const ECO_PAISES = { ES:'España', FR:'Francia', DE:'Alemania', NL:'Países Bajos',
+    GB:'Reino Unido', IT:'Italia', CH:'Suiza', BE:'Bélgica', PT:'Portugal',
+    SE:'Suecia', DK:'Dinamarca', LU:'Luxemburgo', AT:'Austria', PL:'Polonia',
+    IE:'Irlanda', US:'Estados Unidos', IM:'Isla de Man', SI:'Eslovenia', FI:'Finlandia' };
+  // Detecta la hoja de Shopify por firma de columnas (no por nombre de pestaña,
+  // que es impredecible al exportar). Basta con "Lineitem name" + "Source".
+  function findEcommerceSheet(wb) {
+    for (const sn of wb.SheetNames) {
+      const data = XLSX.utils.sheet_to_json(wb.Sheets[sn], {header:1, raw:true, defval:""});
+      if (!data.length) continue;
+      const hdr = data[0].map(h => String(h||'').trim().toLowerCase());
+      if (hdr.includes('lineitem name') && hdr.includes('source')) return sn;
+    }
+    return null;
+  }
+  function parseEcommerceSheet(ws) {
+    const data = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:""});
+    if (!data.length) return [];
+    const H = {}; data[0].forEach((h,i)=>{ H[String(h||'').trim().toLowerCase()] = i; });
+    const col = name => H[name.toLowerCase()];
+    const ci = {
+      name: col('Name'), fin: col('Financial Status'), source: col('Source'),
+      shipMethod: col('Shipping Method'), subtotal: col('Subtotal'),
+      shipping: col('Shipping'), tax1: col('Tax 1 Name'), created: col('Created at'),
+      country: col('Shipping Country'), provName: col('Shipping Province Name'),
+      liQty: col('Lineitem quantity'), liName: col('Lineitem name'),
+      refund: col('Refunded Amount'),
+    };
+    const sfloat = v => { const n = parseFloat(String(v==null?'':v).replace(',','.')); return isNaN(n)?0:n; };
+    const ped = {};        // pedido_id -> objeto
+    const orden = [];      // mantener orden de aparición
+    for (let i = 1; i < data.length; i++) {
+      const r = data[i]; if (!r) continue;
+      const pid = String(r[ci.name]||'').trim();
+      if (!pid) continue;
+      // Cabecera de pedido (solo la primera línea trae Financial Status)
+      if (ci.fin != null && String(r[ci.fin]||'').trim()) {
+        const source = String(r[ci.source]||'').trim();
+        const sm = String(r[ci.shipMethod]||'').trim();
+        const canal = source === 'web' ? 'online' : (sm ? 'envio_tienda' : 'sin_envio');
+        const sub = sfloat(r[ci.subtotal]);
+        const rate = ecoRate(r[ci.tax1]);
+        const fecha = ecoFecha(r[ci.created]);
+        const pais = String(r[ci.country]||'').trim().toUpperCase();
+        const provincia = pais === 'ES' ? String(r[ci.provName]||'').trim() : '';
+        ped[pid] = {
+          pedido_id: pid, fecha,
+          semana: fecha ? isoWeek(fecha) : 0,
+          mes: fecha ? extractMesFromFecha(fecha) : 0,
+          anio: fecha ? parseInt(fecha.substring(0,4))||0 : 0,
+          canal, pais, provincia,
+          neto_sin_iva: +(sub/(1+rate)).toFixed(2),
+          envio: sfloat(r[ci.shipping]),
+          botellas: 0,
+          reembolso: sfloat(r[ci.refund]),
+        };
+        if (!orden.includes(pid)) orden.push(pid);
+      }
+      // Botellas (cualquier línea con cantidad). Si la cabecera aún no se ha
+      // creado, acumulamos en un buffer temporal sobre el propio pedido.
+      const q = r[ci.liQty]; 
+      if (q !== '' && q != null) {
+        const qty = parseInt(sfloat(q)) || 0;
+        if (qty > 0) {
+          if (!ped[pid]) { ped[pid] = { pedido_id: pid, botellas: 0, _pend: true }; if (!orden.includes(pid)) orden.push(pid); }
+          ped[pid].botellas += ecoBotellas(r[ci.liName], qty);
+        }
+      }
+    }
+    // Descartar pedidos sin cabecera (solo buffer) por seguridad
+    return orden.map(pid => ped[pid]).filter(o => o && !o._pend && o.fecha);
   }
 
   // ── Parsear AGORA (ventas) ──
@@ -5710,6 +5990,27 @@ async function handleXlFile(file) {
   const prodAgoraNew = [];
   const prodDijitNew = [];
 
+  // ── Parsear ECOMMERCE (fichero "NURIA" de Shopify, una sola hoja) ──
+  let ecoRows = [];
+  const ecoSheet = findEcommerceSheet(wb);
+  if (ecoSheet) {
+    if (document.getElementById('xl-eco-count')) document.getElementById('xl-eco-count').textContent = 'Procesando...';
+    try {
+      ecoRows = parseEcommerceSheet(wb.Sheets[ecoSheet]);
+      const ico = document.getElementById('xl-eco-ico');
+      if (document.getElementById('xl-eco-count')) document.getElementById('xl-eco-count').textContent = `${ecoRows.length.toLocaleString('es-ES')} pedidos`;
+      if (ico) { ico.textContent = '✓'; ico.className = 'sheet-ok'; }
+    } catch(e) {
+      console.error('[ecommerce]', e);
+      const ico = document.getElementById('xl-eco-ico');
+      if (document.getElementById('xl-eco-count')) document.getElementById('xl-eco-count').textContent = 'Error: ' + e.message;
+      if (ico) { ico.textContent = '✗'; ico.className = 'sheet-err'; }
+    }
+  } else if (document.getElementById('xl-eco-count')) {
+    document.getElementById('xl-eco-count').textContent = 'No incluida';
+    document.getElementById('xl-eco-ico').textContent = '—';
+  }
+
   // ── Guardar en Supabase ──
   document.getElementById('xl-msg').textContent = 'Guardando en base de datos...';
   document.getElementById('xl-msg').style.color = '#888';
@@ -5729,6 +6030,7 @@ async function handleXlFile(file) {
       pnomRows.length > 0 ? sbFetch('rpc/truncate_table', {method:'POST', body:JSON.stringify({table_name:'presupuesto_nominas'})}) : Promise.resolve(),
       visRows.length  > 0 ? sbFetch('rpc/truncate_table', {method:'POST', body:JSON.stringify({table_name:'visitas'})}) : Promise.resolve(),
       coRows.length   > 0 ? sbFetch('rpc/truncate_table', {method:'POST', body:JSON.stringify({table_name:'comensales'})}) : Promise.resolve(),
+      ecoRows.length  > 0 ? sbFetch('rpc/truncate_table', {method:'POST', body:JSON.stringify({table_name:'ecommerce'})}) : Promise.resolve(),
     ]);
     document.getElementById('xl-bar').style.width = '80%';
 
@@ -5749,6 +6051,7 @@ async function handleXlFile(file) {
     if (pnomRows.length > 0)      await insertAll('presupuesto_nominas', pnomRows);
     if (visRows.length > 0)       await insertAll('visitas', visRows);
     if (coRows.length > 0)        await insertAll('comensales', coRows);
+    if (ecoRows.length > 0)       await insertAll('ecommerce', ecoRows);
 
     // Productos ya NO se cargan desde Excel. El catálogo vive en la app.
     let prodWarning = '';
@@ -5769,6 +6072,7 @@ async function handleXlFile(file) {
     if (pnomRows.length > 0)      DB.presupuesto_nominas = pnomRows;
     if (visRows.length > 0)       DB.visitas = visRows;
     if (coRows.length > 0)        DB.comensales = coRows;
+    if (ecoRows.length > 0)       DB.ecommerce = ecoRows;
     if (ingHistRows.length > 0)   DB.ingresos_historico = ingHistRows;
     aplicarAjustesIngresos();   // aplicar el ajuste también justo tras la carga del Excel
     // Reconstruir índices tras añadir productos nuevos
@@ -5785,6 +6089,7 @@ async function handleXlFile(file) {
     if (pnomRows.length > 0)    cargados.push(`${pnomRows.length.toLocaleString('es-ES')} presup. nóm.`);
     if (visRows.length > 0)     cargados.push(`${visRows.length.toLocaleString('es-ES')} visitas`);
     if (coRows.length > 0)      cargados.push(`${coRows.length.toLocaleString('es-ES')} comensales`);
+    if (ecoRows.length > 0)     cargados.push(`${ecoRows.length.toLocaleString('es-ES')} pedidos ecommerce`);
     if (ingHistRows.length > 0) cargados.push(`${ingHistRows.length.toLocaleString('es-ES')} ing. históricos`);
     document.getElementById('xl-msg').textContent = `✓ Cargado: ${cargados.join(' · ')}${prodWarning}`;
     document.getElementById('xl-msg').style.color = prodWarning ? 'var(--orange,#BA7517)' : 'var(--green)';
@@ -5811,6 +6116,7 @@ async function handleXlFile(file) {
 const FVAL = {
   'rv-año':    '2026',
   'rvn-año':   '2026',
+  'eco-año':   '2026',
 };
 
 function fset(btn, key, val, renderFn) {
