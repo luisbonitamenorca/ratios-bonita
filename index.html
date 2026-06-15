@@ -1797,11 +1797,13 @@ function renderEcommerce() {
   const anchorAll = [...(DB.ingresos_historico||[]), ...(DB.ingresos||[])].filter(r =>
     r.familia==='VINO' && VINOS[r.subfamilia] && r.centro==='TIENDA');
   const {desde:cmpD, hasta:cmpH} = gd();
-  const cmpM1 = cmpD ? +cmpD.substring(5,7) : 1;    // mes inicial (selector) o enero
-  const cmpM2 = cmpH ? +cmpH.substring(5,7) : 12;   // mes final  (selector) o diciembre
+  const mdDesde = cmpD ? cmpD.substring(5) : '01-01';   // 'MM-DD' del selector o 1 ene
+  const mdHasta = cmpH ? cmpH.substring(5) : '12-31';   // 'MM-DD' del selector o 31 dic
+  // Ventana mes-día aplicada a CUALQUIER año (para comparar mismo periodo exacto).
+  const inWin = f => { if(!f) return false; const md = f.substring(5); return md>=mdDesde && md<=mdHasta; };
 
   const yearAgg = (y) => {
-    const inY = r => (r.fecha||'').substring(0,4)===y && (r.mes||0)>=cmpM1 && (r.mes||0)<=cmpM2;
+    const inY = r => (r.fecha||'').substring(0,4)===y && inWin(r.fecha);
     const sh = (DB.ecommerce||[]).filter(inY);
     const on = aggShop(sh.filter(r=>r.canal==='online'));
     const en = aggShop(sh.filter(r=>r.canal==='envio_tienda'));
@@ -1816,8 +1818,9 @@ function renderEcommerce() {
     };
   };
   const y25 = yearAgg('2025'), y26 = yearAgg('2026');
-  const rangoTxt = (cmpM1===1 && cmpM2===12) ? 'año completo'
-    : (cmpM1===cmpM2 ? (MESES[cmpM1]||'') : `${MESES[cmpM1]||''}–${MESES[cmpM2]||''}`);
+  const ddmm = s => { const [,m,d] = s.split('-'); return `${+d}/${+m}`; };
+  const rangoTxt = (!cmpD && !cmpH) ? 'año completo'
+    : `${cmpD?ddmm(cmpD):'1/1'}–${cmpH?ddmm(cmpH):'31/12'}`;
   document.getElementById('eco-comp-title').textContent =
     `Comparativa 2025 vs 2026 por canal · ${rangoTxt} (según selector de fechas)`;
 
@@ -1839,7 +1842,7 @@ function renderEcommerce() {
   // ── Tabla anexa: INGRESOS POR FAMILIA · centro TIENDA (misma fuente que la
   //    pestaña Ventas → r.familia sobre ingresos+histórico; debe cuadrar) ──
   const allIng = [...(DB.ingresos_historico||[]), ...(DB.ingresos||[])];
-  const tiendaIng = allIng.filter(r => r.centro==='TIENDA' && (r.mes||0)>=cmpM1 && (r.mes||0)<=cmpM2);
+  const tiendaIng = allIng.filter(r => r.centro==='TIENDA' && inWin(r.fecha));
   const famBase = (y,fam) => tiendaIng.filter(r=>r.familia===fam && (r.fecha||'').substring(0,4)===y).reduce((s,r)=>s+(r.base||0),0);
   const famUds  = (y,fam) => tiendaIng.filter(r=>r.familia===fam && (r.fecha||'').substring(0,4)===y).reduce((s,r)=>s+(r.unidades||0),0);
   const FAM_COL = {'VINO':'#534AB7','VINO EXT':'#7B4FBB','COMIDA':'#1D9E75','BEBIDAS':'#185FA5','ALCOHOLES':'#BA7517','VISITAS':'#993C1D','ENVIOS':'#3AA0C2','VARIOS':'#888'};
