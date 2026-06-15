@@ -1792,18 +1792,16 @@ function renderEcommerce() {
       || `<tr><td colspan="5" style="text-align:center;color:#aaa;padding:12px">—</td></tr>`;
   }
 
-  // ── Comparativa 2025 vs 2026 (independiente del filtro; a mismo periodo) ──
+  // ── Comparativa 2025 vs 2026 (independiente del filtro de año de la pestaña;
+  //     la VENTANA la marca el selector de fechas global de arriba, por meses) ──
   const anchorAll = [...(DB.ingresos_historico||[]), ...(DB.ingresos||[])].filter(r =>
     r.familia==='VINO' && VINOS[r.subfamilia] && r.centro==='TIENDA');
-  // Último mes con datos de 2026 → recorta ambos años a ene–N para comparar justo
-  const meses26 = [
-    ...(DB.ecommerce||[]).filter(r=>(r.fecha||'').substring(0,4)==='2026'),
-    ...anchorAll.filter(r=>(r.fecha||'').substring(0,4)==='2026')
-  ].map(r=>r.mes||0).filter(m=>m>0);
-  const maxMes = meses26.length ? Math.max(...meses26) : 12;
+  const {desde:cmpD, hasta:cmpH} = gd();
+  const cmpM1 = cmpD ? +cmpD.substring(5,7) : 1;    // mes inicial (selector) o enero
+  const cmpM2 = cmpH ? +cmpH.substring(5,7) : 12;   // mes final  (selector) o diciembre
 
   const yearAgg = (y) => {
-    const inY = r => (r.fecha||'').substring(0,4)===y && (r.mes||0)<=maxMes;
+    const inY = r => (r.fecha||'').substring(0,4)===y && (r.mes||0)>=cmpM1 && (r.mes||0)<=cmpM2;
     const sh = (DB.ecommerce||[]).filter(inY);
     const on = aggShop(sh.filter(r=>r.canal==='online'));
     const en = aggShop(sh.filter(r=>r.canal==='envio_tienda'));
@@ -1818,8 +1816,10 @@ function renderEcommerce() {
     };
   };
   const y25 = yearAgg('2025'), y26 = yearAgg('2026');
+  const rangoTxt = (cmpM1===1 && cmpM2===12) ? 'año completo'
+    : (cmpM1===cmpM2 ? (MESES[cmpM1]||'') : `${MESES[cmpM1]||''}–${MESES[cmpM2]||''}`);
   document.getElementById('eco-comp-title').textContent =
-    `Comparativa 2025 vs 2026 por canal · enero–${(MESES[maxMes]||'').toLowerCase()} de cada año (mismo periodo)`;
+    `Comparativa 2025 vs 2026 por canal · ${rangoTxt} (según selector de fechas)`;
 
   const dpct = (a,b) => a>0 ? (b-a)/a : null;   // variación 2026 sobre 2025
   const colPct = d => d==null ? '#888' : (d>=0 ? '#1D9E75' : '#A32D2D');
@@ -5285,6 +5285,18 @@ function pintaFrescura() {
     return daysBetween(ultLVIdeal, new Date(y, m-1, d));
   };
 
+  // Desfase SEMANAL (para Skello/Horas, que es dato semanal sellado con el lunes
+  // de su semana). Se compara contra el lunes de la última semana ya cerrada
+  // (la anterior a la semana en curso), porque Silvia sube cada lunes la semana
+  // que acaba de cerrarse.
+  const lunesDe = (dt) => { const d = new Date(dt); const wd = (d.getDay()+6)%7; d.setDate(d.getDate()-wd); d.setHours(0,0,0,0); return d; };
+  const lunesEsperado = (() => { const tm = lunesDe(hoy); tm.setDate(tm.getDate()-7); return tm; })();
+  const desfaseSemanal = (fechaISO) => {
+    if (!fechaISO) return null;
+    const [y,m,d] = fechaISO.split('-').map(Number);
+    return daysBetween(lunesEsperado, new Date(y, m-1, d));
+  };
+
   const fmtFecha = (s) => { if(!s) return null; const [y,m,d]=s.split('-'); return `${d}/${m}`; };
 
   // Chip de estado por número de días de desfase y umbrales (amber, red)
@@ -5300,17 +5312,19 @@ function pintaFrescura() {
   // Ventas, compras, horas → diarias L–V
   fuentes.push({label:'📋 Ventas',     fecha: ultimaFecha(DB.ingresos),                desfase: desfaseLab(ultimaFecha(DB.ingresos)),                umbrales:[2,5]});
   fuentes.push({label:'🛒 Compras',    fecha: ultimaFecha(DB.gastos),                  desfase: desfaseLab(ultimaFecha(DB.gastos)),                  umbrales:[2,5]});
-  fuentes.push({label:'👥 Horas',      fecha: ultimaFecha(DB.rrhh),                    desfase: desfaseLab(ultimaFecha(DB.rrhh)),                    umbrales:[2,5]});
+  fuentes.push({label:'👥 Horas',      fecha: ultimaFecha(DB.rrhh),                    desfase: desfaseSemanal(ultimaFecha(DB.rrhh)),               umbrales:[7,14], esSemana:true});
   // Comensales, visitas → L y V
   fuentes.push({label:'🍽️ Comensales', fecha: ultimaFecha(DB.comensales, 2026),         desfase: desfaseLV(ultimaFecha(DB.comensales, 2026)),         umbrales:[3,7]});
   fuentes.push({label:'🎫 Visitas',    fecha: ultimaFecha(DB.visitas, 2026),            desfase: desfaseLV(ultimaFecha(DB.visitas, 2026)),            umbrales:[3,7]});
 
   el.innerHTML = fuentes.map(f => {
     const c = chip(f.desfase, f.umbrales[0], f.umbrales[1]);
-    const fechaTxt = f.fecha ? (f.esMes ? f.fecha : fmtFecha(f.fecha)) : 'sin datos';
-    const tip = f.desfase === null
-      ? 'Sin datos cargados'
-      : (f.desfase <= 0 ? 'Al día' : `${f.desfase} día${f.desfase===1?'':'s'} de retraso`);
+    const fechaTxt = f.fecha ? (f.esSemana ? 'sem. '+fmtFecha(f.fecha) : (f.esMes ? f.fecha : fmtFecha(f.fecha))) : 'sin datos';
+    let tip;
+    if (f.desfase === null)      tip = 'Sin datos cargados';
+    else if (f.desfase <= 0)     tip = f.esSemana ? 'Semana al día' : 'Al día';
+    else if (f.esSemana)         { const sem = Math.round(f.desfase/7); tip = `${sem} semana${sem===1?'':'s'} de retraso`; }
+    else                         tip = `${f.desfase} día${f.desfase===1?'':'s'} de retraso`;
     return `<div style="display:flex;align-items:center;gap:6px" title="${tip}">
       <span style="color:${c.col};font-weight:500">${c.ico}</span>
       <span>${f.label}</span>
