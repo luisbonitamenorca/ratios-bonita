@@ -794,21 +794,21 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
           <thead>
             <tr>
               <th rowspan="2">Mes</th>
-              <th class="tr" colspan="4" style="background:#f5faf7">INGRESOS</th>
-              <th class="tr" colspan="4" style="background:#f5f3fa">SALARIOS</th>
-              <th class="tr" colspan="2" style="background:#fafaf3">RATIO</th>
+              <th colspan="4" style="background:#EDE9F9;color:#534AB7;text-align:center;font-weight:700;border-bottom:2px solid #534AB7">SALARIOS</th>
+              <th colspan="2" style="background:#FAF3E3;color:#BA7517;text-align:center;font-weight:700;border-bottom:2px solid #BA7517">RATIO</th>
+              <th colspan="4" style="background:#E8F5EE;color:#1D9E75;text-align:center;font-weight:700;border-bottom:2px solid #1D9E75">INGRESOS</th>
             </tr>
             <tr>
-              <th class="tr" style="background:#f5faf7;font-size:10px">Real</th>
-              <th class="tr" style="background:#f5faf7;font-size:10px">Presup.</th>
-              <th class="tr" style="background:#f5faf7;font-size:10px">Δ</th>
-              <th class="tr" style="background:#f5faf7;font-size:10px">Δ%</th>
-              <th class="tr" style="background:#f5f3fa;font-size:10px">Real</th>
-              <th class="tr" style="background:#f5f3fa;font-size:10px">Presup.</th>
-              <th class="tr" style="background:#f5f3fa;font-size:10px">Δ</th>
-              <th class="tr" style="background:#f5f3fa;font-size:10px">Δ%</th>
-              <th class="tr" style="background:#fafaf3;font-size:10px">Real</th>
-              <th class="tr" style="background:#fafaf3;font-size:10px">Presup.</th>
+              <th class="tr" style="background:#EDE9F9;font-size:10px">Real</th>
+              <th class="tr" style="background:#EDE9F9;font-size:10px">Presup.</th>
+              <th class="tr" style="background:#EDE9F9;font-size:10px">Δ</th>
+              <th class="tr" style="background:#EDE9F9;font-size:10px">Δ%</th>
+              <th class="tr" style="background:#FAF3E3;font-size:10px">Real</th>
+              <th class="tr" style="background:#FAF3E3;font-size:10px">Presup.</th>
+              <th class="tr" style="background:#E8F5EE;font-size:10px">Real</th>
+              <th class="tr" style="background:#E8F5EE;font-size:10px">Presup.</th>
+              <th class="tr" style="background:#E8F5EE;font-size:10px">Δ</th>
+              <th class="tr" style="background:#E8F5EE;font-size:10px">Δ%</th>
             </tr>
           </thead>
           <tbody id="tb-salarios"></tbody>
@@ -1296,6 +1296,10 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
         <div class="card-t">Evolución por semana ISO — € neto por canal</div>
         <div class="chart-wrap" style="height:280px"><canvas id="ch-eco-sem"></canvas></div>
       </div>
+      <div class="card" style="margin-top:12px">
+        <div class="card-t">Evolución por semana ISO — botellas por canal</div>
+        <div class="chart-wrap" style="height:280px"><canvas id="ch-eco-sem-bot"></canvas></div>
+      </div>
 
       <div class="g2" style="margin-top:12px">
         <div class="card">
@@ -1706,9 +1710,10 @@ function renderEcommerce() {
 
   // ── Evolución por semana ISO (€ neto, apilado) ──
   const onlW={}, envW={}, ancW={};
-  shop.filter(r=>r.canal==='online').forEach(r=>{ onlW[r.semana]=(onlW[r.semana]||0)+(r.neto_sin_iva||0); });
-  shop.filter(r=>r.canal==='envio_tienda').forEach(r=>{ envW[r.semana]=(envW[r.semana]||0)+(r.neto_sin_iva||0); });
-  anchorRows.forEach(r=>{ if(r.semana>0) ancW[r.semana]=(ancW[r.semana]||0)+(r.base||0); });
+  const onlWb={}, envWb={}, ancWb={};
+  shop.filter(r=>r.canal==='online').forEach(r=>{ onlW[r.semana]=(onlW[r.semana]||0)+(r.neto_sin_iva||0); onlWb[r.semana]=(onlWb[r.semana]||0)+(r.botellas||0); });
+  shop.filter(r=>r.canal==='envio_tienda').forEach(r=>{ envW[r.semana]=(envW[r.semana]||0)+(r.neto_sin_iva||0); envWb[r.semana]=(envWb[r.semana]||0)+(r.botellas||0); });
+  anchorRows.forEach(r=>{ if(r.semana>0){ ancW[r.semana]=(ancW[r.semana]||0)+(r.base||0); ancWb[r.semana]=(ancWb[r.semana]||0)+(r.unidades||0); } });
   const semset = [...new Set([...Object.keys(ancW),...Object.keys(onlW),...Object.keys(envW)].map(Number).filter(s=>s>0))].sort((a,b)=>a-b);
   const dsAll = [
     { key:'online',       label:'Online',       color:CANAL_COL.online,       data: semset.map(s=>+(onlW[s]||0).toFixed(0)) },
@@ -1725,6 +1730,24 @@ function renderEcommerce() {
       plugins:{ legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},
         tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: €${fmtK(ctx.parsed.y)}`}} },
       scales:{ x:{stacked:true}, y:{stacked:true, ticks:{callback:v=>'€'+fmtK(v)}} } }
+  });
+
+  // ── Evolución por semana ISO (botellas, apilado) ──
+  const dsAllBot = [
+    { key:'online',       label:'Online',       color:CANAL_COL.online,       data: semset.map(s=>Math.round(onlWb[s]||0)) },
+    { key:'envio_tienda', label:'Envío tienda', color:CANAL_COL.envio_tienda, data: semset.map(s=>Math.round(envWb[s]||0)) },
+    { key:'sin_envio',    label:'Sin envío',    color:CANAL_COL.sin_envio,    data: semset.map(s=>Math.max(0,Math.round((ancWb[s]||0)-(onlWb[s]||0)-(envWb[s]||0)))) },
+  ];
+  const dsShowBot = (canal ? dsAllBot.filter(d=>d.key===canal) : dsAllBot)
+    .map(d=>({ label:d.label, backgroundColor:d.color, data:d.data }));
+  destroyChart('ecoSemBot');
+  charts.ecoSemBot = new Chart(document.getElementById('ch-eco-sem-bot'), {
+    type:'bar',
+    data:{ labels:semset.map(s=>'S'+s), datasets:dsShowBot },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},
+        tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${fmtN(ctx.parsed.y)} bot.`}} },
+      scales:{ x:{stacked:true}, y:{stacked:true, ticks:{callback:v=>fmtK(v)}} } }
   });
 
   // ── País y provincia (solo canales Shopify: online + envío) ──
@@ -6930,22 +6953,23 @@ function renderSalarios() {
     return isEur ? `${sign}€${fmt(valor)}` : `${sign}${(valor*100).toFixed(1)}%`;
   };
 
-  // Body
+  // Body — orden: Salarios · Ratio · Ingresos, con tinte por bloque
+  const BG_SAL='#EDE9F9', BG_RAT='#FAF3E3', BG_ING='#E8F5EE';
   tb.innerHTML = rows.map(r => {
     const ratioCol  = r.ratio  != null ? rcolP(r.ratio)  : '';
     const ratioPCol = r.ratioP != null ? rcolP(r.ratioP) : '';
     return `<tr>
       <td><span class="badge b-gray">${MESES[r.mes]||r.mes}</span></td>
-      <td class="tr">${r.ing>0?'€'+fmt(r.ing):'—'}</td>
-      <td class="tr" style="color:#666">${r.ingP>0?'€'+fmt(r.ingP):'—'}</td>
-      <td class="tr" style="color:${colDifIng(r.difIng)};font-size:11px">${fmtSigno(r.difIng, true)}</td>
-      <td class="tr" style="color:${colDifIng(r.difIng)};font-size:11px">${fmtSigno(r.difIngPct, false)}</td>
-      <td class="tr">${r.nom>0?'€'+fmt(r.nom):'—'}</td>
-      <td class="tr" style="color:#666">${r.nomP>0?'€'+fmt(r.nomP):'—'}</td>
-      <td class="tr" style="color:${colDifNom(r.difNom)};font-size:11px">${fmtSigno(r.difNom, true)}</td>
-      <td class="tr" style="color:${colDifNom(r.difNom)};font-size:11px">${fmtSigno(r.difNomPct, false)}</td>
-      <td class="tr">${r.ratio!=null?`<span style="color:${ratioCol};font-weight:500">${fmtPct(r.ratio)}</span>`:'—'}</td>
-      <td class="tr">${r.ratioP!=null?`<span style="color:${ratioPCol};font-weight:500">${fmtPct(r.ratioP)}</span>`:'—'}</td>
+      <td class="tr" style="background:${BG_SAL}">${r.nom>0?'€'+fmt(r.nom):'—'}</td>
+      <td class="tr" style="background:${BG_SAL};color:#666">${r.nomP>0?'€'+fmt(r.nomP):'—'}</td>
+      <td class="tr" style="background:${BG_SAL};color:${colDifNom(r.difNom)};font-size:11px">${fmtSigno(r.difNom, true)}</td>
+      <td class="tr" style="background:${BG_SAL};color:${colDifNom(r.difNom)};font-size:11px">${fmtSigno(r.difNomPct, false)}</td>
+      <td class="tr" style="background:${BG_RAT}">${r.ratio!=null?`<span style="color:${ratioCol};font-weight:500">${fmtPct(r.ratio)}</span>`:'—'}</td>
+      <td class="tr" style="background:${BG_RAT}">${r.ratioP!=null?`<span style="color:${ratioPCol};font-weight:500">${fmtPct(r.ratioP)}</span>`:'—'}</td>
+      <td class="tr" style="background:${BG_ING}">${r.ing>0?'€'+fmt(r.ing):'—'}</td>
+      <td class="tr" style="background:${BG_ING};color:#666">${r.ingP>0?'€'+fmt(r.ingP):'—'}</td>
+      <td class="tr" style="background:${BG_ING};color:${colDifIng(r.difIng)};font-size:11px">${fmtSigno(r.difIng, true)}</td>
+      <td class="tr" style="background:${BG_ING};color:${colDifIng(r.difIng)};font-size:11px">${fmtSigno(r.difIngPct, false)}</td>
     </tr>`;
   }).join('');
 
@@ -6957,16 +6981,16 @@ function renderSalarios() {
     const totDifNomPct = totNomP > 0 ? (totNom - totNomP) / totNomP : null;
     tf.innerHTML = `<tr class="tr-tot">
       <td>TOTAL</td>
-      <td class="tr">€${fmt(totIng)}</td>
-      <td class="tr" style="color:#666">€${fmt(totIngP)}</td>
-      <td class="tr" style="color:${colDifIng(totDifIng)}">${fmtSigno(totDifIng, true)}</td>
-      <td class="tr" style="color:${colDifIng(totDifIng)}">${fmtSigno(totDifIngPct, false)}</td>
-      <td class="tr">€${fmt(totNom)}</td>
-      <td class="tr" style="color:#666">€${fmt(totNomP)}</td>
-      <td class="tr" style="color:${colDifNom(totDifNom)}">${fmtSigno(totDifNom, true)}</td>
-      <td class="tr" style="color:${colDifNom(totDifNomPct)}">${fmtSigno(totDifNomPct, false)}</td>
-      <td class="tr">${totRatio!==null?`<span style="color:${rcolP(totRatio)};font-weight:500">${fmtPct(totRatio)}</span>`:'—'}</td>
-      <td class="tr">${totRatioP!==null?`<span style="color:${rcolP(totRatioP)};font-weight:500">${fmtPct(totRatioP)}</span>`:'—'}</td>
+      <td class="tr" style="background:${BG_SAL}">€${fmt(totNom)}</td>
+      <td class="tr" style="background:${BG_SAL};color:#666">€${fmt(totNomP)}</td>
+      <td class="tr" style="background:${BG_SAL};color:${colDifNom(totDifNom)}">${fmtSigno(totDifNom, true)}</td>
+      <td class="tr" style="background:${BG_SAL};color:${colDifNom(totDifNom)}">${fmtSigno(totDifNomPct, false)}</td>
+      <td class="tr" style="background:${BG_RAT}">${totRatio!==null?`<span style="color:${rcolP(totRatio)};font-weight:500">${fmtPct(totRatio)}</span>`:'—'}</td>
+      <td class="tr" style="background:${BG_RAT}">${totRatioP!==null?`<span style="color:${rcolP(totRatioP)};font-weight:500">${fmtPct(totRatioP)}</span>`:'—'}</td>
+      <td class="tr" style="background:${BG_ING}">€${fmt(totIng)}</td>
+      <td class="tr" style="background:${BG_ING};color:#666">€${fmt(totIngP)}</td>
+      <td class="tr" style="background:${BG_ING};color:${colDifIng(totDifIng)}">${fmtSigno(totDifIng, true)}</td>
+      <td class="tr" style="background:${BG_ING};color:${colDifIng(totDifIng)}">${fmtSigno(totDifIngPct, false)}</td>
     </tr>`;
   }
 }
