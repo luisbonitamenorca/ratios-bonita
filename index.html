@@ -1317,6 +1317,22 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
           </table></div>
         </div>
       </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="card-t" id="eco-comp-title">Comparativa 2025 vs 2026 por canal</div>
+        <div class="tbl-wrap"><table>
+          <thead><tr>
+            <th>Canal</th>
+            <th class="tr">€ neto 2025</th><th class="tr">€ neto 2026</th><th class="tr">Δ%</th>
+            <th class="tr">Botellas 2025</th><th class="tr">Botellas 2026</th><th class="tr">Δ%</th>
+          </tr></thead>
+          <tbody id="tb-eco-comp"></tbody>
+        </table></div>
+      </div>
+      <div class="g2" style="margin-top:12px">
+        <div class="card"><div class="card-t">€ neto por canal — 2025 vs 2026</div><div class="chart-wrap" style="height:260px"><canvas id="ch-eco-comp-eur"></canvas></div></div>
+        <div class="card"><div class="card-t">Botellas por canal — 2025 vs 2026</div><div class="chart-wrap" style="height:260px"><canvas id="ch-eco-comp-bot"></canvas></div></div>
+      </div>
     </div>
 
     <!-- ══════════════ CARGA EXCEL ══════════════ -->
@@ -1775,6 +1791,90 @@ function renderEcommerce() {
     document.getElementById('tb-eco-prov').innerHTML = provs.map(fmtGeoRow(k=>k)).join('')
       || `<tr><td colspan="5" style="text-align:center;color:#aaa;padding:12px">—</td></tr>`;
   }
+
+  // ── Comparativa 2025 vs 2026 (independiente del filtro; a mismo periodo) ──
+  const anchorAll = [...(DB.ingresos_historico||[]), ...(DB.ingresos||[])].filter(r =>
+    r.familia==='VINO' && VINOS[r.subfamilia] && r.centro==='TIENDA');
+  // Último mes con datos de 2026 → recorta ambos años a ene–N para comparar justo
+  const meses26 = [
+    ...(DB.ecommerce||[]).filter(r=>(r.fecha||'').substring(0,4)==='2026'),
+    ...anchorAll.filter(r=>(r.fecha||'').substring(0,4)==='2026')
+  ].map(r=>r.mes||0).filter(m=>m>0);
+  const maxMes = meses26.length ? Math.max(...meses26) : 12;
+
+  const yearAgg = (y) => {
+    const inY = r => (r.fecha||'').substring(0,4)===y && (r.mes||0)<=maxMes;
+    const sh = (DB.ecommerce||[]).filter(inY);
+    const on = aggShop(sh.filter(r=>r.canal==='online'));
+    const en = aggShop(sh.filter(r=>r.canal==='envio_tienda'));
+    const anc = anchorAll.filter(inY);
+    const aBot = anc.reduce((s,r)=>s+(r.unidades||0),0);
+    const aBase= anc.reduce((s,r)=>s+(r.base||0),0);
+    return {
+      online:       { neto:on.neto, bot:on.bot },
+      envio_tienda: { neto:en.neto, bot:en.bot },
+      sin_envio:    { neto:aBase-on.neto-en.neto, bot:Math.max(0,Math.round(aBot-on.bot-en.bot)) },
+      total:        { neto:aBase, bot:Math.round(aBot) },
+    };
+  };
+  const y25 = yearAgg('2025'), y26 = yearAgg('2026');
+  document.getElementById('eco-comp-title').textContent =
+    `Comparativa 2025 vs 2026 por canal · enero–${(MESES[maxMes]||'').toLowerCase()} de cada año (mismo periodo)`;
+
+  const dpct = (a,b) => a>0 ? (b-a)/a : null;   // variación 2026 sobre 2025
+  const colPct = d => d==null ? '#888' : (d>=0 ? '#1D9E75' : '#A32D2D');
+  const fmtPctSign = d => d==null ? '—' : `${d>=0?'+':'−'}${(Math.abs(d)*100).toFixed(1)}%`;
+  const compRow = (lbl, col, a, b) => {
+    const dE = dpct(a.neto,b.neto), dB = dpct(a.bot,b.bot);
+    return `<tr>
+      <td><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${col};margin-right:6px"></span>${lbl}</td>
+      <td class="tr">${fmtEur(a.neto)}</td>
+      <td class="tr">${fmtEur(b.neto)}</td>
+      <td class="tr" style="color:${colPct(dE)};font-weight:500">${fmtPctSign(dE)}</td>
+      <td class="tr">${fmtN(a.bot)}</td>
+      <td class="tr">${fmtN(b.bot)}</td>
+      <td class="tr" style="color:${colPct(dB)};font-weight:500">${fmtPctSign(dB)}</td>
+    </tr>`;
+  };
+  document.getElementById('tb-eco-comp').innerHTML =
+    compRow('Online', CANAL_COL.online, y25.online, y26.online) +
+    compRow('Envío tienda', CANAL_COL.envio_tienda, y25.envio_tienda, y26.envio_tienda) +
+    compRow('Sin envío', CANAL_COL.sin_envio, y25.sin_envio, y26.sin_envio) +
+    `<tr class="tr-tot">
+      <td>TOTAL</td>
+      <td class="tr">${fmtEur(y25.total.neto)}</td><td class="tr">${fmtEur(y26.total.neto)}</td>
+      <td class="tr" style="color:${colPct(dpct(y25.total.neto,y26.total.neto))};font-weight:500">${fmtPctSign(dpct(y25.total.neto,y26.total.neto))}</td>
+      <td class="tr">${fmtN(y25.total.bot)}</td><td class="tr">${fmtN(y26.total.bot)}</td>
+      <td class="tr" style="color:${colPct(dpct(y25.total.bot,y26.total.bot))};font-weight:500">${fmtPctSign(dpct(y25.total.bot,y26.total.bot))}</td>
+    </tr>`;
+
+  const labelsCmp = ['Online','Envío tienda','Sin envío'];
+  const eur25 = [y25.online.neto, y25.envio_tienda.neto, y25.sin_envio.neto].map(v=>+v.toFixed(0));
+  const eur26 = [y26.online.neto, y26.envio_tienda.neto, y26.sin_envio.neto].map(v=>+v.toFixed(0));
+  const bot25 = [y25.online.bot, y25.envio_tienda.bot, y25.sin_envio.bot];
+  const bot26 = [y26.online.bot, y26.envio_tienda.bot, y26.sin_envio.bot];
+  destroyChart('ecoCompEur');
+  charts.ecoCompEur = new Chart(document.getElementById('ch-eco-comp-eur'), {
+    type:'bar',
+    data:{ labels:labelsCmp, datasets:[
+      { label:'2025', data:eur25, backgroundColor:'#B9B9C6', borderRadius:3 },
+      { label:'2026', data:eur26, backgroundColor:'#534AB7', borderRadius:3 } ] },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},
+        tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: €${fmtK(ctx.parsed.y)}`}} },
+      scales:{ y:{ ticks:{ callback:v=>'€'+fmtK(v) } } } }
+  });
+  destroyChart('ecoCompBot');
+  charts.ecoCompBot = new Chart(document.getElementById('ch-eco-comp-bot'), {
+    type:'bar',
+    data:{ labels:labelsCmp, datasets:[
+      { label:'2025', data:bot25, backgroundColor:'#B9B9C6', borderRadius:3 },
+      { label:'2026', data:bot26, backgroundColor:'#534AB7', borderRadius:3 } ] },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},
+        tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${fmtN(ctx.parsed.y)} bot.`}} },
+      scales:{ y:{ ticks:{ callback:v=>fmtK(v) } } } }
+  });
 }
 
 function renderAll() { 
