@@ -1535,9 +1535,9 @@ function nextId() { return ++_idSeq; }
 function extractMes(fecha) { return extractMesFromFecha(fecha); }
 
 // ── Helpers ────────────────────────────────────────────────────────
-const _nf2 = new Intl.NumberFormat('es-ES', {minimumFractionDigits:2, maximumFractionDigits:2, useGrouping:true});
-const _nf0 = new Intl.NumberFormat('es-ES', {minimumFractionDigits:0,  maximumFractionDigits:2, useGrouping:true});
-const _nfInt = new Intl.NumberFormat('es-ES', {maximumFractionDigits:0, useGrouping:true});
+const _nf2 = new Intl.NumberFormat('es-ES', {minimumFractionDigits:2, maximumFractionDigits:2, useGrouping:'always'});
+const _nf0 = new Intl.NumberFormat('es-ES', {minimumFractionDigits:0,  maximumFractionDigits:2, useGrouping:'always'});
+const _nfInt = new Intl.NumberFormat('es-ES', {maximumFractionDigits:0, useGrouping:'always'});
 const fmt   = n => _nf2.format(n||0);
 const fmt2  = n => _nf2.format(n||0);
 const fmtN  = n => _nf0.format(n||0);
@@ -3604,7 +3604,7 @@ function costeMedio(id_prod, fechaCierreISO) {
 
 function fmtEur(v) {
   if (v == null || isNaN(v)) return '—';
-  return v.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+  return v.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: 'always' }) + ' €';
 }
 
 function renderInvMensual() {
@@ -3968,7 +3968,7 @@ function rsRenderDetalle(matriz) {
       <td style="text-align:center"><span id="${famId}-arr">▼</span></td>
       <td>${fam}</td>
       <td class="tr">${famProd}</td>
-      <td class="tr">${famUds.toLocaleString('es-ES',{maximumFractionDigits:1})}</td>
+      <td class="tr">${famUds.toLocaleString('es-ES',{maximumFractionDigits:1,useGrouping:'always'})}</td>
       <td class="tr">${fmtEur(famVal)}</td>
     </tr>`);
     // Filas subfamilias
@@ -3980,7 +3980,7 @@ function rsRenderDetalle(matriz) {
         <td style="text-align:center;padding-left:30px"><span id="${subId}-arr">▶</span></td>
         <td style="padding-left:20px;color:#555">${s}</td>
         <td class="tr">${prodCount}</td>
-        <td class="tr">${it.unidades.toLocaleString('es-ES',{maximumFractionDigits:1})}</td>
+        <td class="tr">${it.unidades.toLocaleString('es-ES',{maximumFractionDigits:1,useGrouping:'always'})}</td>
         <td class="tr">${fmtEur(it.valor)}</td>
       </tr>`);
       // Filas productos (ocultas por defecto)
@@ -3989,7 +3989,7 @@ function rsRenderDetalle(matriz) {
           <td></td>
           <td style="padding-left:50px">${p.id_prod} · ${p.nombre.replace(/</g,'&lt;')}</td>
           <td class="tr">${p.coste!=null?fmtEur(p.coste):'—'}</td>
-          <td class="tr">${p.unidades.toLocaleString('es-ES',{maximumFractionDigits:1})}</td>
+          <td class="tr">${p.unidades.toLocaleString('es-ES',{maximumFractionDigits:1,useGrouping:'always'})}</td>
           <td class="tr">${fmtEur(p.valor)}</td>
         </tr>`);
       });
@@ -6217,7 +6217,7 @@ async function handleXlFile(file) {
     try {
       ecoRows = parseEcommerceSheet(wb.Sheets[ecoSheet]);
       const ico = document.getElementById('xl-eco-ico');
-      if (document.getElementById('xl-eco-count')) document.getElementById('xl-eco-count').textContent = `${ecoRows.length.toLocaleString('es-ES')} pedidos`;
+      if (document.getElementById('xl-eco-count')) document.getElementById('xl-eco-count').textContent = `${ecoRows.length.toLocaleString('es-ES',{useGrouping:'always'})} pedidos`;
       if (ico) { ico.textContent = '✓'; ico.className = 'sheet-ok'; }
     } catch(e) {
       console.error('[ecommerce]', e);
@@ -6300,16 +6300,16 @@ async function handleXlFile(file) {
     const total = ingRows.length + gasRows.length + pptoRows.length + rrhhRows.length + nomRows.length + pnomRows.length + visRows.length + coRows.length + ingHistRows.length;
     // Resumen de qué tablas se han actualizado en esta carga
     const cargados = [];
-    if (ingRows.length > 0)     cargados.push(`${ingRows.length.toLocaleString('es-ES')} ventas`);
-    if (gasRows.length > 0)     cargados.push(`${gasRows.length.toLocaleString('es-ES')} compras`);
-    if (pptoRows.length > 0)    cargados.push(`${pptoRows.length.toLocaleString('es-ES')} presup.`);
-    if (rrhhRows.length > 0)    cargados.push(`${rrhhRows.length.toLocaleString('es-ES')} horas`);
-    if (nomRows.length > 0)     cargados.push(`${nomRows.length.toLocaleString('es-ES')} nóminas`);
-    if (pnomRows.length > 0)    cargados.push(`${pnomRows.length.toLocaleString('es-ES')} presup. nóm.`);
-    if (visRows.length > 0)     cargados.push(`${visRows.length.toLocaleString('es-ES')} visitas`);
-    if (coRows.length > 0)      cargados.push(`${coRows.length.toLocaleString('es-ES')} comensales`);
-    if (ecoRows.length > 0)     cargados.push(`${ecoRows.length.toLocaleString('es-ES')} pedidos ecommerce`);
-    if (ingHistRows.length > 0) cargados.push(`${ingHistRows.length.toLocaleString('es-ES')} ing. históricos`);
+    if (ingRows.length > 0)     cargados.push(`${ingRows.length.toLocaleString('es-ES',{useGrouping:'always'})} ventas`);
+    if (gasRows.length > 0)     cargados.push(`${gasRows.length.toLocaleString('es-ES',{useGrouping:'always'})} compras`);
+    if (pptoRows.length > 0)    cargados.push(`${pptoRows.length.toLocaleString('es-ES',{useGrouping:'always'})} presup.`);
+    if (rrhhRows.length > 0)    cargados.push(`${rrhhRows.length.toLocaleString('es-ES',{useGrouping:'always'})} horas`);
+    if (nomRows.length > 0)     cargados.push(`${nomRows.length.toLocaleString('es-ES',{useGrouping:'always'})} nóminas`);
+    if (pnomRows.length > 0)    cargados.push(`${pnomRows.length.toLocaleString('es-ES',{useGrouping:'always'})} presup. nóm.`);
+    if (visRows.length > 0)     cargados.push(`${visRows.length.toLocaleString('es-ES',{useGrouping:'always'})} visitas`);
+    if (coRows.length > 0)      cargados.push(`${coRows.length.toLocaleString('es-ES',{useGrouping:'always'})} comensales`);
+    if (ecoRows.length > 0)     cargados.push(`${ecoRows.length.toLocaleString('es-ES',{useGrouping:'always'})} pedidos ecommerce`);
+    if (ingHistRows.length > 0) cargados.push(`${ingHistRows.length.toLocaleString('es-ES',{useGrouping:'always'})} ing. históricos`);
     document.getElementById('xl-msg').textContent = `✓ Cargado: ${cargados.join(' · ')}${prodWarning}`;
     document.getElementById('xl-msg').style.color = prodWarning ? 'var(--orange,#BA7517)' : 'var(--green)';
     setSyncStatus('✓ Excel cargado', '#1D9E75');
@@ -6550,7 +6550,7 @@ function renderVino() {
       datasets:[{ data:refs.map(r=>+r.uds.toFixed(0)), backgroundColor:'#534AB7', borderRadius:3 }]
     },
     options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
-      plugins:{legend:{display:false}, tooltip:{callbacks:{label:ctx=>`${ctx.parsed.x.toLocaleString('es-ES')} bot.`}}},
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label:ctx=>`${ctx.parsed.x.toLocaleString('es-ES',{useGrouping:'always'})} bot.`}}},
       scales:{ x:{beginAtZero:true,ticks:{callback:v=>fmtK(v)},grid:{color:'rgba(128,128,128,.08)'}}, y:{grid:{display:false}} } }
   });
 
@@ -6565,7 +6565,7 @@ function renderVino() {
     data:{ labels:canales.map(e=>e[0]), datasets:[{ data:canales.map(e=>+e[1].toFixed(0)), backgroundColor:canales.map((_,i)=>canalColors[i]||'#999'), borderWidth:2 }] },
     options:{ responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{position:'right',labels:{boxWidth:12,font:{size:11}}},
-        tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${ctx.parsed.toLocaleString('es-ES')} bot.`}} } }
+        tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${ctx.parsed.toLocaleString('es-ES',{useGrouping:'always'})} bot.`}} } }
   });
 
   // Evolución mensual: año seleccionado vs año anterior, ambos años en el mismo gráfico
@@ -6599,7 +6599,7 @@ function renderVino() {
     options:{ responsive:true, maintainAspectRatio:false,
       plugins:{
         legend:{display:true, position:'top', labels:{boxWidth:12, boxHeight:12, font:{size:11}, padding:14}},
-        tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString('es-ES')} botellas`}}
+        tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString('es-ES',{useGrouping:'always'})} botellas`}}
       },
       scales:{ y:{beginAtZero:true,ticks:{callback:v=>fmtK(v)},grid:{color:'rgba(128,128,128,.08)'}}, x:{grid:{display:false}} } }
   });
