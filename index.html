@@ -6772,12 +6772,19 @@ function renderRRHH(){
   const totTeo=rows0.reduce((s,r)=>s+r.teorico,0);
   const totReal=rows0.reduce((s,r)=>s+r.real,0);
   const totExt=totReal-totTeo;
+  // % de horas extra sobre el total teórico (tope de presupuesto: 10%)
+  const pctExt = totTeo>0 ? totExt/totTeo : null;
+  const pctExtCol = pctExt===null ? '#888'
+    : pctExt < 0.05 ? '#1D9E75'        // verde: por debajo del 5% (o negativo)
+    : pctExt <= 0.10 ? '#BA7517'       // amarillo: entre 5% y 10%
+    : '#A32D2D';                       // rojo: por encima del 10%
   const nPers=new Set(rows0.map(r=>r.persona)).size;
   const nSem=new Set(rows0.map(r=>r.semana)).size;
   document.getElementById('rh-metrics').innerHTML = `
     <div class="mc"><div class="lbl">Horas teóricas</div><div class="val">${fmtN(totTeo)}</div></div>
     <div class="mc"><div class="lbl">Horas reales</div><div class="val">${fmtN(totReal)}</div></div>
     <div class="mc"><div class="lbl">Horas extra</div><div class="val" style="color:${totExt>0?'#BA7517':'#1D9E75'}">${totExt>=0?'+':''}${fmtN(totExt)}</div></div>
+    <div class="mc"><div class="lbl">% extra s/teóricas</div><div class="val" style="color:${pctExtCol}">${pctExt!==null?(pctExt>=0?'+':'')+(pctExt*100).toFixed(1)+'%':'—'}</div></div>
     <div class="mc"><div class="lbl">Personas</div><div class="val">${nPers}</div></div>
     <div class="mc"><div class="lbl">Semanas</div><div class="val">${nSem}</div></div>`;
 
