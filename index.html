@@ -5816,7 +5816,12 @@ const FVAL = {
 function fset(btn, key, val, renderFn) {
   FVAL[key] = val;
   const grp = btn.parentElement;
-  grp.querySelectorAll('.fbtn').forEach(b => b.classList.remove('active'));
+  // Desmarcar solo los botones del MISMO filtro (misma key), no los de otros
+  // grupos que comparten la misma barra .fbar (Centro / Dpto / Abrir por…).
+  const needle = "'" + key + "'";
+  grp.querySelectorAll('.fbtn').forEach(b => {
+    if ((b.getAttribute('onclick') || '').indexOf(needle) !== -1) b.classList.remove('active');
+  });
   btn.classList.add('active');
   renderFn();
 }
