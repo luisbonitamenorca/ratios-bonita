@@ -1485,6 +1485,8 @@ const DB = {
   ratios_objetivo:     [],
   productos_controlados:[],
   inventarios:         [],
+  ecommerce:           [],
+  ecommerce_historico: [],
 };
 
 </script>
@@ -1630,10 +1632,13 @@ function getPpto(c,m) { return DB.presupuesto.filter(r=>(!c||c==='ALL'||r.centro
 function destroyChart(id) { if (charts[id]) { charts[id].destroy(); charts[id] = null; } }
 function extractMes(fecha) { try { return new Date(fecha).getMonth()+1; } catch { return 0; } }
 
+// Todos los pedidos ecommerce: histórico (años congelados) + en curso (año actual)
+function ecoAll() { return [...(DB.ecommerce_historico||[]), ...(DB.ecommerce||[])]; }
+
 // Años con datos en la pestaña Ecommerce (pedidos Shopify + ancla vino Tienda)
 function ecoYearsDisponibles() {
   const ys = new Set();
-  (DB.ecommerce||[]).forEach(r=>{ const y=(r.fecha||'').substring(0,4); if(/^\d{4}$/.test(y)) ys.add(y); });
+  ecoAll().forEach(r=>{ const y=(r.fecha||'').substring(0,4); if(/^\d{4}$/.test(y)) ys.add(y); });
   [...(DB.ingresos_historico||[]),...(DB.ingresos||[])].forEach(r=>{
     if(r.familia==='VINO' && VINOS[r.subfamilia] && r.centro==='TIENDA'){
       const y=(r.fecha||'').substring(0,4); if(/^\d{4}$/.test(y)) ys.add(y);
@@ -1680,7 +1685,7 @@ function renderEcommerce() {
     : `${winD?ddmmWin(winD):'1/1'}–${winH?ddmmWin(winH):'31/12'}`;
 
   // ── Datos Shopify (solo canales con seguimiento: online + envío tienda) ──
-  const shop = (DB.ecommerce||[]).filter(r => (!año || (r.fecha||'').substring(0,4)===año));
+  const shop = ecoAll().filter(r => (!año || (r.fecha||'').substring(0,4)===año));
   const aggShop = list => {
     const ped = list.length;
     const neto = list.reduce((s,r)=>s+(r.neto_sin_iva||0),0);
@@ -1891,7 +1896,7 @@ function renderEcommerce() {
     const mm=extractMesFromFecha(r.fecha);
     if(mm>0) baseY[y][mm-1]+=(r.base||0);
   });
-  (DB.ecommerce||[]).forEach(r=>{
+  ecoAll().forEach(r=>{
     const y=(r.fecha||'').substring(0,4);
     if(!onY[y] || !inWindow(r.fecha)) return;
     const mm=r.mes || extractMesFromFecha(r.fecha);
@@ -1968,7 +1973,7 @@ function renderEcommerce() {
 
   const yearAgg = (y) => {
     const inY = r => (r.fecha||'').substring(0,4)===y && inWin(r.fecha);
-    const sh = (DB.ecommerce||[]).filter(inY);
+    const sh = ecoAll().filter(inY);
     const on = aggShop(sh.filter(r=>r.canal==='online'));
     const en = aggShop(sh.filter(r=>r.canal==='envio_tienda'));
     const anc = anchorAll.filter(inY);
@@ -5329,6 +5334,7 @@ async function loadFromStorage() {
       'productos_controlados': 'id_prod',
       'inventarios': 'fecha_cierre',
       'ecommerce': 'pedido_id',
+      'ecommerce_historico': 'pedido_id',
     };
     async function loadAll(table) {
       const rows = [];
@@ -5351,7 +5357,7 @@ async function loadFromStorage() {
       console.warn(`[carga] Falló ${table}:`, e.message);
       return [];
     });
-    const [ingresos, gastos, presupuesto, rrhh, nominas, presupuesto_nominas, visitas, comensales, ingresos_historico, productos_agora, productos_dijit, familias, subfamilias, ratios_objetivo, productos_controlados, inventarios, rrhh_excepciones, rrhh_puestos, ecommerce] = await Promise.all([
+    const [ingresos, gastos, presupuesto, rrhh, nominas, presupuesto_nominas, visitas, comensales, ingresos_historico, productos_agora, productos_dijit, familias, subfamilias, ratios_objetivo, productos_controlados, inventarios, rrhh_excepciones, rrhh_puestos, ecommerce, ecommerce_historico] = await Promise.all([
       loadAll('ingresos'),
       loadAll('gastos'),
       loadAll('presupuesto'),
@@ -5371,6 +5377,7 @@ async function loadFromStorage() {
       safeLoad('rrhh_excepciones'),
       safeLoad('rrhh_puestos'),
       safeLoad('ecommerce'),
+      safeLoad('ecommerce_historico'),
     ]);
     DB.ingresos             = ingresos             || [];
     DB.gastos               = gastos               || [];
@@ -5391,6 +5398,7 @@ async function loadFromStorage() {
     DB.productos_controlados= productos_controlados|| [];
     DB.inventarios          = inventarios          || [];
     DB.ecommerce            = ecommerce            || [];
+    DB.ecommerce_historico  = ecommerce_historico  || [];
     aplicarAjustesIngresos();   // reubicación externa de ventas (no toca ficheros ni Supabase)
     invalidateStockCache();
     // Construir índices para resolución dinámica de familia/subfamilia
@@ -6381,8 +6389,20 @@ async function handleXlFile(file) {
     if (document.getElementById('xl-eco-count')) document.getElementById('xl-eco-count').textContent = 'Procesando...';
     try {
       ecoRows = parseEcommerceSheet(wb.Sheets[ecoSheet]);
+      // Red de seguridad: solo el año en curso (2026+) entra en 'ecommerce'.
+      // 2025 y anteriores viven congelados en 'ecommerce_historico' y NO se tocan
+      // en cargas normales, así Nuria solo necesita subir desde el 1 de enero de 2026.
+      const ECO_LIVE_FROM = 2026;
+      const totalParsed = ecoRows.length;
+      ecoRows = ecoRows.filter(r => {
+        const y = parseInt((r.fecha||'').substring(0,4), 10) || r.anio || 0;
+        return y >= ECO_LIVE_FROM;
+      });
+      const ecoIgnorados = totalParsed - ecoRows.length;
       const ico = document.getElementById('xl-eco-ico');
-      if (document.getElementById('xl-eco-count')) document.getElementById('xl-eco-count').textContent = `${ecoRows.length.toLocaleString('es-ES',{useGrouping:'always'})} pedidos`;
+      if (document.getElementById('xl-eco-count')) document.getElementById('xl-eco-count').textContent =
+        `${ecoRows.length.toLocaleString('es-ES',{useGrouping:'always'})} pedidos`
+        + (ecoIgnorados>0 ? ` · ${ecoIgnorados.toLocaleString('es-ES')} de años anteriores ignorados (van al histórico)` : '');
       if (ico) { ico.textContent = '✓'; ico.className = 'sheet-ok'; }
     } catch(e) {
       console.error('[ecommerce]', e);
