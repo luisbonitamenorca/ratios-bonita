@@ -1271,7 +1271,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
     <!-- ══════════════ ECOMMERCE (Shopify) ══════════════ -->
     <div id="tab-ecommerce" class="tab-pane">
       <div class="fbar">
-        <span class="fbar-label">Año</span><button class="fbtn" onclick="fset(this,'eco-año','',renderEcommerce)">Todos</button><button class="fbtn active" onclick="fset(this,'eco-año','2026',renderEcommerce)">2026</button>
+        <span id="eco-year-filter"></span>
         <span class="fbar-label">Canal</span><button class="fbtn active" onclick="fset(this,'eco-canal','',renderEcommerce)">Todos</button><button class="fbtn" onclick="fset(this,'eco-canal','online',renderEcommerce)">Online</button><button class="fbtn" onclick="fset(this,'eco-canal','envio_tienda',renderEcommerce)">Envío tienda</button><button class="fbtn" onclick="fset(this,'eco-canal','sin_envio',renderEcommerce)">Sin envío</button>
       </div>
       <div id="eco-metrics" class="metrics-row"></div>
@@ -1286,6 +1286,12 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
         <div style="font-size:11px;color:#999;margin-top:8px;line-height:1.5">
           <strong>Online</strong> y <strong>Envío tienda</strong> salen de Shopify. <strong>Sin envío</strong> es el residuo: total de vino de Tienda en Ágora (mismo dato que la pestaña Vino) menos online menos envío — son ventas en bodega sin envío, que no pasan por Shopify y por eso no tienen pedidos ni ticket medio individuales.
         </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="card-t">Comparación de ingresos entre años — por mes</div>
+        <div class="chart-wrap" style="height:260px"><canvas id="ch-eco-anos"></canvas></div>
+        <div style="font-size:11px;color:#999;margin-top:8px">€ neto total de tienda (vino) por mes, una barra por año. No hay presupuesto por canales, así que solo se comparan los ingresos reales entre años.</div>
       </div>
 
       <div class="g2" style="margin-top:12px">
@@ -1624,7 +1630,36 @@ function getPpto(c,m) { return DB.presupuesto.filter(r=>(!c||c==='ALL'||r.centro
 function destroyChart(id) { if (charts[id]) { charts[id].destroy(); charts[id] = null; } }
 function extractMes(fecha) { try { return new Date(fecha).getMonth()+1; } catch { return 0; } }
 
+// Años con datos en la pestaña Ecommerce (pedidos Shopify + ancla vino Tienda)
+function ecoYearsDisponibles() {
+  const ys = new Set();
+  (DB.ecommerce||[]).forEach(r=>{ const y=(r.fecha||'').substring(0,4); if(/^\d{4}$/.test(y)) ys.add(y); });
+  [...(DB.ingresos_historico||[]),...(DB.ingresos||[])].forEach(r=>{
+    if(r.familia==='VINO' && VINOS[r.subfamilia] && r.centro==='TIENDA'){
+      const y=(r.fecha||'').substring(0,4); if(/^\d{4}$/.test(y)) ys.add(y);
+    }
+  });
+  return [...ys].sort();
+}
+
+// Construye los botones de año dinámicamente (uno por año con datos).
+// Solo reconstruye si cambia el conjunto de años, para no resetear el botón activo en cada render.
+function ecoBuildYearButtons() {
+  const box = document.getElementById('eco-year-filter');
+  if (!box) return;
+  const years = ecoYearsDisponibles();
+  const sig = years.join(',');
+  if (box.dataset.sig === sig && box.children.length) return;
+  box.dataset.sig = sig;
+  if (!years.length) { box.innerHTML = '<span class="fbar-label">Año</span>'; return; }
+  let sel = fget('eco-año');
+  if (!years.includes(sel)) { sel = years[years.length-1]; FVAL['eco-año'] = sel; }   // último año por defecto
+  box.innerHTML = '<span class="fbar-label">Año</span>' +
+    years.map(y=>`<button class="fbtn${y===sel?' active':''}" onclick="fset(this,'eco-año','${y}',renderEcommerce)">${y}</button>`).join('');
+}
+
 function renderEcommerce() {
+  ecoBuildYearButtons();
   const año   = fget('eco-año');
   const canal = fget('eco-canal');
   const CANAL_LBL = { online:'Online', envio_tienda:'Envío tienda', sin_envio:'Sin envío' };
@@ -1770,7 +1805,7 @@ function renderEcommerce() {
   });
 
   // ── Evolución MENSUAL (líneas, una línea independiente por canal) ──
-  const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const MESES_ABBR = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   const mesDe = r => r.mes || extractMesFromFecha(r.fecha);
   const onlM={}, envM={}, ancM={};       // € por mes
   const onlMb={}, envMb={}, ancMb={};    // botellas por mes
@@ -1778,7 +1813,7 @@ function renderEcommerce() {
   shop.filter(r=>r.canal==='envio_tienda').forEach(r=>{ const m=mesDe(r); if(m>0){ envM[m]=(envM[m]||0)+(r.neto_sin_iva||0); envMb[m]=(envMb[m]||0)+(r.botellas||0); } });
   anchorRows.forEach(r=>{ const m=extractMesFromFecha(r.fecha); if(m>0){ ancM[m]=(ancM[m]||0)+(r.base||0); ancMb[m]=(ancMb[m]||0)+(r.unidades||0); } });
   const messet = [...new Set([...Object.keys(ancM),...Object.keys(onlM),...Object.keys(envM)].map(Number).filter(m=>m>0))].sort((a,b)=>a-b);
-  const mesLabels = messet.map(m=>MESES[m-1]);
+  const mesLabels = messet.map(m=>MESES_ABBR[m-1]);
   const lineStyle = (d) => ({ label:d.label, data:d.data, borderColor:d.color, backgroundColor:d.color,
     tension:0.3, borderWidth:2, pointRadius:3, pointHoverRadius:5, fill:false });
 
@@ -1814,6 +1849,40 @@ function renderEcommerce() {
       plugins:{ legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},
         tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${fmtN(ctx.parsed.y)} bot.`}} },
       scales:{ y:{ beginAtZero:true, ticks:{callback:v=>fmtK(v)} } } }
+  });
+
+  // ── Comparación de ingresos entre años — por mes (todos los años con datos) ──
+  // Sin presupuesto por canales: solo barras de € neto total (= ancla vino Tienda) por mes y año.
+  const ecoYears = ecoYearsDisponibles();
+  const anchorYearsAll = [...(DB.ingresos_historico||[]),...(DB.ingresos||[])].filter(r =>
+    r.familia==='VINO' && VINOS[r.subfamilia] && r.centro==='TIENDA');
+  const ingAñoMes = {};                                  // año -> [12] € base
+  ecoYears.forEach(y=>ingAñoMes[y]=Array(12).fill(0));
+  anchorYearsAll.forEach(r=>{
+    const y=(r.fecha||'').substring(0,4);
+    if(!ingAñoMes[y]) return;
+    const mm=extractMesFromFecha(r.fecha);
+    if(mm>0) ingAñoMes[y][mm-1]+=(r.base||0);
+  });
+  // Mostrar solo los meses con datos en algún año (evita columnas vacías al final)
+  const mesesConDatos = [];
+  for (let mm=1; mm<=12; mm++) if (ecoYears.some(y=>ingAñoMes[y][mm-1]>0)) mesesConDatos.push(mm);
+  const YEAR_PAL = ['#B9B9C6','#534AB7','#185FA5','#BA7517','#993C1D','#3AA0C2'];
+  const dsAños = ecoYears.map((y,i)=>({
+    label:y,
+    data: mesesConDatos.map(mm=>+ingAñoMes[y][mm-1].toFixed(0)),
+    backgroundColor: i===ecoYears.length-1 ? '#1D9E75' : YEAR_PAL[i % YEAR_PAL.length],   // año más reciente en verde
+    borderRadius:3
+  }));
+  destroyChart('ecoAnos');
+  charts.ecoAnos = new Chart(document.getElementById('ch-eco-anos'), {
+    type:'bar',
+    data:{ labels: mesesConDatos.map(mm=>MESES_ABBR[mm-1]), datasets:dsAños },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},
+        tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: €${fmtK(ctx.parsed.y)}`}} },
+      scales:{ y:{ beginAtZero:true, ticks:{callback:v=>'€'+fmtK(v)}, grid:{color:'rgba(128,128,128,.08)'} },
+               x:{ grid:{display:false}, ticks:{autoSkip:false} } } }
   });
 
   // ── País y provincia (solo canales Shopify: online + envío) ──
