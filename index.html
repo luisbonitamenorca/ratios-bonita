@@ -1289,14 +1289,14 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
       </div>
 
       <div class="card" style="margin-top:12px">
-        <div class="card-t">Comparación de ingresos entre años — por mes</div>
+        <div class="card-t" id="eco-anos-t">Comparación de ingresos entre años — por mes</div>
         <div class="chart-wrap" style="height:260px"><canvas id="ch-eco-anos"></canvas></div>
         <div style="font-size:11px;color:#999;margin-top:8px">€ neto total de tienda (vino) por mes, una barra por año. No hay presupuesto por canales, así que solo se comparan los ingresos reales entre años.</div>
       </div>
 
       <div class="g2" style="margin-top:12px">
-        <div class="card"><div class="card-t">€ neto por canal (% del total)</div><div class="chart-wrap" style="height:240px"><canvas id="ch-eco-tm"></canvas></div></div>
-        <div class="card"><div class="card-t">Botellas por canal (% del total)</div><div class="chart-wrap" style="height:240px"><canvas id="ch-eco-pb"></canvas></div></div>
+        <div class="card"><div class="card-t" id="eco-donut-eur-t">€ neto por canal (% del total)</div><div class="chart-wrap" style="height:240px"><canvas id="ch-eco-tm"></canvas></div></div>
+        <div class="card"><div class="card-t" id="eco-donut-bot-t">Botellas por canal (% del total)</div><div class="chart-wrap" style="height:240px"><canvas id="ch-eco-pb"></canvas></div></div>
       </div>
 
       <div class="card" style="margin-top:12px">
@@ -1663,11 +1663,21 @@ function renderEcommerce() {
   const año   = fget('eco-año');
   const canal = fget('eco-canal');
   const CANAL_LBL = { online:'Online', envio_tienda:'Envío tienda', sin_envio:'Sin envío' };
-  const CANAL_COL = { online:'#185FA5', envio_tienda:'#534AB7', sin_envio:'#1D9E75' };
+  const CANAL_COL = { online:'#E08020', envio_tienda:'#534AB7', sin_envio:'#1D9E75' };
   const PAIS_LBL = { ES:'España', FR:'Francia', DE:'Alemania', NL:'Países Bajos',
     GB:'Reino Unido', IT:'Italia', CH:'Suiza', BE:'Bélgica', PT:'Portugal',
     SE:'Suecia', DK:'Dinamarca', LU:'Luxemburgo', AT:'Austria', PL:'Polonia',
     IE:'Irlanda', US:'Estados Unidos', IM:'Isla de Man', SI:'Eslovenia', FI:'Finlandia' };
+
+  // ── Ventana de fechas del selector global (arriba). Se aplica como rango
+  //    mes-día sobre CUALQUIER año, para poder comparar el mismo periodo. ──
+  const {desde:winD, hasta:winH} = gd();
+  const wDesde = winD ? winD.substring(5) : '01-01';     // 'MM-DD'
+  const wHasta = winH ? winH.substring(5) : '12-31';
+  const inWindow = f => { if(!f) return false; const md=(f||'').substring(5); return md>=wDesde && md<=wHasta; };
+  const ddmmWin = s => { const [,mm,dd]=s.split('-'); return `${+dd}/${+mm}`; };
+  const rangoSel = (!winD && !winH) ? 'año completo'
+    : `${winD?ddmmWin(winD):'1/1'}–${winH?ddmmWin(winH):'31/12'}`;
 
   // ── Datos Shopify (solo canales con seguimiento: online + envío tienda) ──
   const shop = (DB.ecommerce||[]).filter(r => (!año || (r.fecha||'').substring(0,4)===año));
@@ -1693,6 +1703,16 @@ function renderEcommerce() {
   const sinBot  = Math.max(0, Math.round(anchorBot - online.bot - envio.bot));
   const sinNeto = anchorBase - online.neto - envio.neto;
   const sin = { ped:null, neto:sinNeto, bot:sinBot, env:0, tm:null, pb: sinBot? sinNeto/sinBot : 0 };
+
+  // ── Datos para los DÓNUTS: año seleccionado + ventana de fechas del selector ──
+  const shopWin  = shop.filter(r => inWindow(r.fecha));
+  const onlineW  = aggShop(shopWin.filter(r=>r.canal==='online'));
+  const envioW   = aggShop(shopWin.filter(r=>r.canal==='envio_tienda'));
+  const anchorWin     = anchorRows.filter(r => inWindow(r.fecha));
+  const anchorBaseWin = anchorWin.reduce((s,r)=>s+(r.base||0),0);
+  const anchorBotWin  = anchorWin.reduce((s,r)=>s+(r.unidades||0),0);
+  const sinW = { neto: anchorBaseWin - onlineW.neto - envioW.neto,
+                 bot:  Math.max(0, Math.round(anchorBotWin - onlineW.bot - envioW.bot)) };
 
   // Objeto por canal para tabla/KPIs
   const dataC = { online, envio_tienda: envio, sin_envio: sin };
@@ -1782,23 +1802,29 @@ function renderEcommerce() {
   });
   const donutColors = [CANAL_COL.online, CANAL_COL.envio_tienda, CANAL_COL.sin_envio];
 
-  // € neto totales por canal
+  // Títulos con el rango de fechas seleccionado
+  const tEur = document.getElementById('eco-donut-eur-t');
+  const tBot = document.getElementById('eco-donut-bot-t');
+  if (tEur) tEur.textContent = `€ neto por canal (% del total) · ${rangoSel}`;
+  if (tBot) tBot.textContent = `Botellas por canal (% del total) · ${rangoSel}`;
+
+  // € neto totales por canal (con ventana de fechas)
   destroyChart('ecoTm');
   charts.ecoTm = new Chart(document.getElementById('ch-eco-tm'), {
     type:'doughnut',
     data:{ labels:['Online','Envío tienda','Sin envío'],
-      datasets:[{ data:[+online.neto.toFixed(2), +envio.neto.toFixed(2), +Math.max(0,sin.neto).toFixed(2)],
+      datasets:[{ data:[+onlineW.neto.toFixed(2), +envioW.neto.toFixed(2), +Math.max(0,sinW.neto).toFixed(2)],
         backgroundColor:donutColors, borderColor:'#fff', borderWidth:2 }] },
     options: donutOpts(v=>'€'+fmtK(v), ''),
     plugins:[donutPctPlugin]
   });
 
-  // Botellas totales por canal
+  // Botellas totales por canal (con ventana de fechas)
   destroyChart('ecoPb');
   charts.ecoPb = new Chart(document.getElementById('ch-eco-pb'), {
     type:'doughnut',
     data:{ labels:['Online','Envío tienda','Sin envío'],
-      datasets:[{ data:[Math.round(online.bot), Math.round(envio.bot), Math.max(0,Math.round(sin.bot))],
+      datasets:[{ data:[Math.round(onlineW.bot), Math.round(envioW.bot), Math.max(0,Math.round(sinW.bot))],
         backgroundColor:donutColors, borderColor:'#fff', borderWidth:2 }] },
     options: donutOpts(v=>fmtN(v), ' bot.'),
     plugins:[donutPctPlugin]
@@ -1851,29 +1877,48 @@ function renderEcommerce() {
       scales:{ y:{ beginAtZero:true, ticks:{callback:v=>fmtK(v)} } } }
   });
 
-  // ── Comparación de ingresos entre años — por mes (todos los años con datos) ──
-  // Sin presupuesto por canales: solo barras de € neto total (= ancla vino Tienda) por mes y año.
+  // ── Comparación de ingresos entre años — por mes ──
+  // Respeta la VENTANA de fechas de arriba (rango mes-día sobre todos los años) y
+  // el FILTRO DE CANAL (Todos = total tienda; o solo Online / Envío / Sin envío).
   const ecoYears = ecoYearsDisponibles();
   const anchorYearsAll = [...(DB.ingresos_historico||[]),...(DB.ingresos||[])].filter(r =>
     r.familia==='VINO' && VINOS[r.subfamilia] && r.centro==='TIENDA');
-  const ingAñoMes = {};                                  // año -> [12] € base
-  ecoYears.forEach(y=>ingAñoMes[y]=Array(12).fill(0));
+  const baseY = {}, onY = {}, enY = {};                  // año -> [12]: ancla €, online €, envío €
+  ecoYears.forEach(y=>{ baseY[y]=Array(12).fill(0); onY[y]=Array(12).fill(0); enY[y]=Array(12).fill(0); });
   anchorYearsAll.forEach(r=>{
     const y=(r.fecha||'').substring(0,4);
-    if(!ingAñoMes[y]) return;
+    if(!baseY[y] || !inWindow(r.fecha)) return;
     const mm=extractMesFromFecha(r.fecha);
-    if(mm>0) ingAñoMes[y][mm-1]+=(r.base||0);
+    if(mm>0) baseY[y][mm-1]+=(r.base||0);
   });
-  // Mostrar solo los meses con datos en algún año (evita columnas vacías al final)
+  (DB.ecommerce||[]).forEach(r=>{
+    const y=(r.fecha||'').substring(0,4);
+    if(!onY[y] || !inWindow(r.fecha)) return;
+    const mm=r.mes || extractMesFromFecha(r.fecha);
+    if(mm<1) return;
+    if(r.canal==='online')            onY[y][mm-1]+=(r.neto_sin_iva||0);
+    else if(r.canal==='envio_tienda') enY[y][mm-1]+=(r.neto_sin_iva||0);
+  });
+  // Valor según el canal seleccionado (Todos = total ancla)
+  const valAñoMes = (y,idx) => {
+    if (canal==='online')       return onY[y][idx];
+    if (canal==='envio_tienda') return enY[y][idx];
+    if (canal==='sin_envio')    return Math.max(0, baseY[y][idx]-onY[y][idx]-enY[y][idx]);
+    return baseY[y][idx];
+  };
+  // Mostrar solo los meses con datos en algún año (evita columnas vacías)
   const mesesConDatos = [];
-  for (let mm=1; mm<=12; mm++) if (ecoYears.some(y=>ingAñoMes[y][mm-1]>0)) mesesConDatos.push(mm);
+  for (let mm=1; mm<=12; mm++) if (ecoYears.some(y=>valAñoMes(y,mm-1)>0)) mesesConDatos.push(mm);
   const YEAR_PAL = ['#B9B9C6','#534AB7','#185FA5','#BA7517','#993C1D','#3AA0C2'];
   const dsAños = ecoYears.map((y,i)=>({
     label:y,
-    data: mesesConDatos.map(mm=>+ingAñoMes[y][mm-1].toFixed(0)),
+    data: mesesConDatos.map(mm=>+valAñoMes(y,mm-1).toFixed(0)),
     backgroundColor: i===ecoYears.length-1 ? '#1D9E75' : YEAR_PAL[i % YEAR_PAL.length],   // año más reciente en verde
     borderRadius:3
   }));
+  const tAnos = document.getElementById('eco-anos-t');
+  if (tAnos) tAnos.textContent =
+    `Comparación de ingresos entre años — por mes · ${canal?CANAL_LBL[canal]:'Todos los canales'} · ${rangoSel}`;
   destroyChart('ecoAnos');
   charts.ecoAnos = new Chart(document.getElementById('ch-eco-anos'), {
     type:'bar',
