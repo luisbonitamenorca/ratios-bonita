@@ -2236,12 +2236,30 @@ function _repTrabajadores(){
 }
 
 function initRepartoNominas(){
+  // Reset completo: se usa al ABRIR la pestaña (deja el formulario en blanco)
+  populateRepartoSelect();
+  const sel=document.getElementById('rep-dni'); if(sel) sel.value='';
+  renderRepartoInputs(null);
+  renderRepartoList();
+}
+
+// Rellena el desplegable de trabajadores PRESERVANDO la selección actual.
+// Es seguro llamarlo en cada render (no toca el formulario de inputs).
+function populateRepartoSelect(){
   const sel=document.getElementById('rep-dni'); if(!sel) return;
+  const prev=sel.value;
   const ts=_repTrabajadores();
   sel.innerHTML='<option value="">— Selecciona un trabajador —</option>'+
     ts.map(t=>`<option value="${(t.dni||'').replace(/"/g,'&quot;')}">${(t.nombre||t.dni).replace(/</g,'&lt;')}</option>`).join('');
-  sel.value='';
-  renderRepartoInputs(null);
+  sel.value=(prev && ts.some(t=>t.dni===prev)) ? prev : '';
+}
+
+// Refresco seguro del panel (desplegable + lista) sin resetear el formulario.
+// Se llama desde renderSalarios, que se ejecuta en TODAS las rutas (clic en
+// pestaña, refresco tras cargar datos, clic en filtro), garantizando que el
+// desplegable se pueble aunque las nóminas aún no estuvieran cargadas al abrir.
+function refreshRepartoUI(){
+  populateRepartoSelect();
   renderRepartoList();
 }
 
@@ -7479,6 +7497,7 @@ function renderSalarios() {
     tb.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#aaa;padding:30px">Sin datos para los filtros seleccionados.</td></tr>';
     if (tf) tf.innerHTML = '';
     if (mt) mt.innerHTML = '';
+    refreshRepartoUI();
     return;
   }
 
@@ -7560,6 +7579,8 @@ function renderSalarios() {
       <td class="tr" style="background:${BG_ING};color:${colDifIng(totDifIng)}">${fmtSigno(totDifIngPct, false)}</td>
     </tr>`;
   }
+  // Mantener el panel de reparto poblado en cualquier ruta de render
+  refreshRepartoUI();
 }
 
 // ── RRHH ──────────────────────────────────────────────────────────
