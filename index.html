@@ -518,6 +518,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
     <button class="tab-btn" onclick="showTab('resumen-vino',this)">🍷 Vino</button>
     <button class="tab-btn" onclick="showTab('resumen-compras',this)">🛒 Compras</button>
     <button class="tab-btn" onclick="showTab('salarios',this)">💶 Salarios</button>
+    <button class="tab-btn" onclick="showTab('asiento',this)">🧾 Asiento Nóminas</button>
     <button class="tab-btn" onclick="showTab('rrhh',this)">👥 Fichajes</button>
     <button class="tab-btn" onclick="showTab('visitas',this)">🎫 Visitas</button>
     <button class="tab-btn" onclick="showTab('comensales',this)">🍽️ Comensales</button>
@@ -854,6 +855,26 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
         </div>
         <div id="rep-list"></div>
         <div id="rep-suggest" style="margin-top:14px"></div>
+      </div>
+    </div>
+
+    <!-- ══════════════ ASIENTO NÓMINAS ══════════════ -->
+    <div id="tab-asiento" class="tab-pane">
+      <div class="fbar">
+        <span class="fbar-label">Mes</span>
+        <select id="as-mes" onchange="renderAsiento()" style="font-size:12px;padding:5px 8px"></select>
+        <span class="fbar-label" style="margin-left:8px">Año</span>
+        <select id="as-anio" onchange="renderAsiento()" style="font-size:12px;padding:5px 8px"></select>
+        <button class="fbtn" onclick="descargarAsientoExcel()" style="margin-left:auto;font-weight:600">⬇ Descargar Excel (A3)</button>
+      </div>
+      <div class="card">
+        <div class="card-t">🧾 Asiento de nóminas — <span id="as-titulo"></span></div>
+        <div style="font-size:12px;color:#888;margin-bottom:10px;max-width:880px">
+          Mismo asiento que el Excel para A3, pero con el coste por centro <strong>ya repartido</strong> según los % de dedicación definidos en Salarios
+          (las cuentas 640 y 642 reflejan el reparto; el resto son totales de empresa, idénticos al bruto). La comprobación DEBE − HABER debe dar 0.
+        </div>
+        <div id="as-aviso"></div>
+        <div id="as-tabla"></div>
       </div>
     </div>
 
@@ -2145,6 +2166,7 @@ function renderAll() {
     'resumen-vino': renderVino,
     'control-prod': renderControlProd,
     'salarios': renderSalarios,
+    'asiento': renderAsiento,
     'ecommerce': renderEcommerce,
   };
   if (renders[id]) renders[id]();
@@ -2170,6 +2192,7 @@ function showTab(id, btn) {
     'ecommerce':       renderEcommerce,
     'control-prod':    () => { populateCpFamilias(); populateCpSubfamilias(); renderControlProd(); },
     'salarios':        () => { renderSalarios(); initRepartoNominas(); },
+    'asiento':         renderAsiento,
   };
   if (renders[id]) renders[id]();
 }
@@ -2633,6 +2656,130 @@ async function addHorasReparto(dni, nombre){
     renderRepartoList(); renderRepartoSuggest(); renderSalarios();
     setSyncStatus('✓ Añadido reparto por horas', '#1D9E75'); setTimeout(()=>setSyncStatus('', '#888'), 2500);
   }catch(e){ alert('Error: '+e.message); }
+}
+
+// ─── Asiento de Nóminas (pestaña) ────────────────────────────────────
+// Centros en el mismo orden que el Excel de A3.
+const ASIENTO_CENTROS = ['ESTRUCTURA','BINIFADET','TIENDA','TAMARINDOS','TAMARINDOS BAR','TIRANT','BODEGA','PRODUCCION'];
+const MESES_LARGOS = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+function _eur2(n){ return (Math.round((n||0)*100)/100).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+let _asientoCache = null;
+
+function populateAsientoSelectors(){
+  const selM=document.getElementById('as-mes'), selA=document.getElementById('as-anio');
+  if(!selM||!selA) return;
+  const anios=[...new Set((DB.nominas||[]).map(r=>r.anio).filter(Boolean))].sort((a,b)=>b-a);
+  const meses=[...new Set((DB.nominas||[]).map(r=>r.mes).filter(Boolean))].sort((a,b)=>a-b);
+  if(!selA.options.length || selA.dataset.n!=anios.length){
+    selA.innerHTML=anios.map(a=>`<option value="${a}">${a}</option>`).join('');
+    selA.dataset.n=anios.length;
+    if(anios.length) selA.value=anios[0];
+  }
+  if(!selM.options.length || selM.dataset.n!=meses.length){
+    selM.innerHTML=meses.map(m=>`<option value="${m}">${MESES_LARGOS[m]||m}</option>`).join('');
+    selM.dataset.n=meses.length;
+    if(meses.length) selM.value=meses[meses.length-1]; // último mes con datos
+  }
+}
+
+// Construye las líneas del asiento para un mes/año. Devuelve {rows, totDebe, totHaber, faltanDeducciones}
+function _buildAsiento(mes, anio){
+  // 640 (devengado) y 642 (SS empresa) por centro CON reparto
+  const ef = nominasEfectivas().filter(r=> r.mes===mes && r.anio===anio);
+  const dev={}, ss={};
+  ASIENTO_CENTROS.forEach(c=>{ dev[c]=0; ss[c]=0; });
+  ef.forEach(r=>{ const c=(r.canal||'').toUpperCase(); if(!(c in dev)){ dev[c]=0; ss[c]=0; } dev[c]+=(r.total_devengado||0); ss[c]+=(r.coste_ss||0); });
+  // HABER: totales de empresa desde los datos en bruto (el reparto no los cambia)
+  const raw=(DB.nominas||[]).filter(r=> r.mes===mes && r.anio===anio);
+  const sum=f=>raw.reduce((s,r)=>s+(+r[f]||0),0);
+  const totCuotaObrera=sum('cuota_obrera'), totAutonomo=sum('anticipo_autonomo'),
+        totManut=sum('anticipo_manutencion'), totLiquido=sum('liquido'),
+        totEmbargos=sum('embargos'), totAnticipo=sum('anticipo'), totIrpf=sum('irpf');
+  const extra = Object.keys(dev).filter(c=> !ASIENTO_CENTROS.includes(c));
+  const orden = ASIENTO_CENTROS.concat(extra);
+  const centrosUsados = orden.filter(c=> Math.abs(dev[c]||0)>0.005 || Math.abs(ss[c]||0)>0.005);
+  const tot642 = centrosUsados.reduce((s,c)=>s+ss[c],0);
+  const rows=[];
+  centrosUsados.forEach(c=> rows.push({cuenta:'640000000', num:true, depto:c, debe:dev[c], haber:0, col:'Y'}));
+  centrosUsados.forEach(c=> rows.push({cuenta:'642000000', num:true, depto:c, debe:ss[c],  haber:0, col:'AK'}));
+  rows.push({cuenta:'476.0', depto:'', debe:0, haber: totCuotaObrera+tot642, col:'AC', obs:'Cuota obrera + SS empresa'});
+  rows.push({cuenta:'476.1', depto:'', debe:0, haber: totAutonomo, col:'AA', obs:'Anticipo autónomo (Luis/Patri)'});
+  rows.push({cuenta:'755.0', depto:'', debe:0, haber: totManut,    col:'Z',  obs:'Anticipo manutención'});
+  rows.push({cuenta:'465.0', depto:'', debe:0, haber: totLiquido,  col:'AF', obs:'Líquido a percibir'});
+  rows.push({cuenta:'465.1', depto:'', debe:0, haber: totEmbargos, col:'AE', obs:'Embargos'});
+  rows.push({cuenta:'465.2', depto:'', debe:0, haber: totAnticipo, col:'AB', obs:'Anticipos nómina'});
+  rows.push({cuenta:'4751.0',depto:'', debe:0, haber: totIrpf,     col:'AD', obs:'Retención IRPF'});
+  const totDebe=rows.reduce((s,r)=>s+r.debe,0), totHaber=rows.reduce((s,r)=>s+r.haber,0);
+  // Si hay devengado pero faltan retenciones/cuota, es que el Excel no se ha re-subido con las columnas nuevas
+  const faltanDeducciones = (totDebe>0.005) && (totCuotaObrera+totIrpf===0);
+  return {rows, totDebe, totHaber, faltanDeducciones};
+}
+
+function renderAsiento(){
+  populateAsientoSelectors();
+  const mes=parseInt((document.getElementById('as-mes')||{}).value)||0;
+  const anio=parseInt((document.getElementById('as-anio')||{}).value)||0;
+  const cont=document.getElementById('as-tabla'); if(!cont) return;
+  const titulo=document.getElementById('as-titulo'); if(titulo) titulo.textContent=(mes?MESES_LARGOS[mes]:'')+(anio?(' '+anio):'');
+  const aviso=document.getElementById('as-aviso'); if(aviso) aviso.innerHTML='';
+  if(!mes||!anio){ cont.innerHTML='<div style="color:#aaa;padding:20px">No hay datos de nóminas cargados.</div>'; _asientoCache=null; return; }
+  const A=_buildAsiento(mes, anio);
+  _asientoCache={mes, anio, ...A};
+  if(!A.rows.length || (A.totDebe===0 && A.totHaber===0)){ cont.innerHTML='<div style="color:#aaa;padding:20px">Sin datos de nóminas para '+MESES_LARGOS[mes]+' '+anio+'.</div>'; return; }
+  const dif=A.totDebe-A.totHaber;
+  if(A.faltanDeducciones && aviso){
+    aviso.innerHTML='<div style="background:#FCEEEE;border:1px solid #E7C3C3;color:#A32D2D;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:10px">⚠ Este mes no tiene cargados los importes de IRPF, cuota obrera, embargos ni anticipos (el asiento no cuadrará). Re-sube el Excel de nóminas una vez para poblarlos.</div>';
+  }
+  let h='<table style="width:100%;font-size:13px;border-collapse:collapse">'+
+    '<thead><tr style="text-align:left;color:#888;border-bottom:2px solid #e5e5e5">'+
+    '<th style="padding:6px 8px">Cuenta</th><th style="padding:6px 8px">Departamento</th>'+
+    '<th style="padding:6px 8px;text-align:right">Debe</th><th style="padding:6px 8px;text-align:right">Haber</th>'+
+    '<th style="padding:6px 8px;color:#bbb">Observaciones</th></tr></thead><tbody>';
+  let lastCuenta=null;
+  A.rows.forEach(r=>{
+    const sep = (lastCuenta!==null && r.cuenta!==lastCuenta) ? 'border-top:1px solid #eee' : 'border-top:1px solid #f6f6f6';
+    lastCuenta=r.cuenta;
+    h+=`<tr style="${sep}">
+      <td style="padding:5px 8px;font-variant-numeric:tabular-nums">${r.cuenta}</td>
+      <td style="padding:5px 8px">${r.depto||''}</td>
+      <td style="padding:5px 8px;text-align:right;font-variant-numeric:tabular-nums">${r.debe?_eur2(r.debe):''}</td>
+      <td style="padding:5px 8px;text-align:right;font-variant-numeric:tabular-nums">${r.haber?_eur2(r.haber):''}</td>
+      <td style="padding:5px 8px;color:#aaa;font-size:12px">${r.obs||''}</td>
+    </tr>`;
+  });
+  h+=`<tr style="border-top:2px solid #e5e5e5;font-weight:700">
+      <td style="padding:7px 8px" colspan="2">TOTAL</td>
+      <td style="padding:7px 8px;text-align:right;font-variant-numeric:tabular-nums">${_eur2(A.totDebe)}</td>
+      <td style="padding:7px 8px;text-align:right;font-variant-numeric:tabular-nums">${_eur2(A.totHaber)}</td><td></td></tr>`;
+  const okCuadre=Math.abs(dif)<0.01;
+  h+=`<tr><td colspan="5" style="padding:8px;text-align:right;font-size:12px">Comprobación (Debe − Haber): <strong style="color:${okCuadre?'#1D9E75':'#A32D2D'}">${_eur2(dif)}</strong> ${okCuadre?'✓ cuadra':'✗ no cuadra'}</td></tr>`;
+  h+='</tbody></table>';
+  cont.innerHTML=h;
+}
+
+function descargarAsientoExcel(){
+  if(!_asientoCache || !_asientoCache.rows.length){ alert('No hay asiento que descargar.'); return; }
+  const {mes, anio, rows, totDebe, totHaber}=_asientoCache;
+  const mesNom=MESES_LARGOS[mes]||mes;
+  const aoa=[['MES','CUENTA','DEPARTAMENTO','DEBE','HABER','COLUMNA DATOS','OBSERVACIONES']];
+  rows.forEach((r,i)=>{
+    aoa.push([
+      i===0?mesNom:'',
+      r.num?Number(r.cuenta):r.cuenta,
+      r.depto||'',
+      r.debe?Math.round(r.debe*100)/100:'',
+      r.haber?Math.round(r.haber*100)/100:'',
+      r.col||'',
+      r.obs||''
+    ]);
+  });
+  aoa.push(['','','',Math.round(totDebe*100)/100, Math.round(totHaber*100)/100,'','']);
+  aoa.push(['','COMPROBACIÓN','', '', Math.round((totDebe-totHaber)*100)/100,'','']);
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols']=[{wch:10},{wch:14},{wch:16},{wch:13},{wch:13},{wch:14},{wch:32}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'ASIENTO');
+  XLSX.writeFile(wb, `Asiento_Nominas_${anio}_${mesNom}.xlsx`);
 }
 
 function nominasCosteCentro(ct, m) {
@@ -6533,6 +6680,12 @@ async function handleXlFile(file) {
           horas_extra:    parseFloat(cols[17])||0,
           sueldo:         parseFloat(cols[20])||0,
           total_devengado:parseFloat(cols[24])||0,
+          anticipo_manutencion: parseFloat(cols[25])||0,  // Z  → 755.0
+          anticipo_autonomo:    parseFloat(cols[26])||0,  // AA → 476.1
+          anticipo:             parseFloat(cols[27])||0,  // AB → 465.2
+          cuota_obrera:         parseFloat(cols[28])||0,  // AC → 476.0 (parte trabajador)
+          irpf:                 parseFloat(cols[29])||0,  // AD → 4751.0
+          embargos:             parseFloat(cols[30])||0,  // AE → 465.1
           liquido:        parseFloat(cols[31])||0,
           coste_ss:       parseFloat(cols[36])||0,
           coste_total:    parseFloat(cols[37])||0,
