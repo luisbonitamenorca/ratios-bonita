@@ -985,6 +985,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
         <button class="fbtn active" onclick="setClasifView('familias',this)">Familias / Subfamilias</button>
         <button class="fbtn" onclick="setClasifView('agora',this)">Productos Ágora</button>
         <button class="fbtn" onclick="setClasifView('dijit',this)">Productos Dijit</button>
+        <button class="btn-sm" onclick="descargarClasificacionExcel()" title="Descarga un Excel con 4 hojas: Familias, Subfamilias, Productos Ágora y Productos Dijit (catálogo completo)" style="margin-left:auto">⬇ Descargar Excel</button>
       </div>
 
       <!-- Vista FAMILIAS -->
@@ -7673,6 +7674,75 @@ function descargarComprasExcel() {
   partes.push(hoy);
   const fname = partes.join('_') + '.xlsx';
   XLSX.writeFile(wb, fname);
+}
+
+// Descarga un único Excel con 4 hojas (Familias, Subfamilias, Productos Ágora,
+// Productos Dijit). Exporta SIEMPRE el catálogo completo (ignora los filtros de
+// las vistas). Fuente de verdad: DB.familias / DB.subfamilias /
+// DB.productos_agora / DB.productos_dijit. La familia de cada producto se
+// compara en MAYÚSCULAS (igual que en el resto de la app).
+function descargarClasificacionExcel() {
+  const wb = XLSX.utils.book_new();
+  const famById = new Map((DB.familias||[]).map(f => [f.id, f.nombre]));
+
+  // ── Hoja 1: Familias ──
+  const fams = [...(DB.familias||[])].sort((a,b) =>
+    (((a.orden)??9999) - ((b.orden)??9999)) || (a.nombre||'').localeCompare(b.nombre||'')
+  );
+  const famData = [['FAMILIA','ORDEN','Nº SUBFAM.','Nº PROD. ÁGORA','Nº PROD. DIJIT']];
+  fams.forEach(f => {
+    const nSub   = (DB.subfamilias||[]).filter(s => s.familia_id === f.id).length;
+    const nProdA = (DB.productos_agora||[]).filter(p => (p.familia||'').toUpperCase().trim() === f.nombre).length;
+    const nProdD = (DB.productos_dijit||[]).filter(p => (p.familia||'').toUpperCase().trim() === f.nombre).length;
+    famData.push([f.nombre||'', (f.orden)??'', nSub, nProdA, nProdD]);
+  });
+  const wsFam = XLSX.utils.aoa_to_sheet(famData);
+  wsFam['!cols'] = [{wch:22},{wch:8},{wch:12},{wch:16},{wch:16}];
+  XLSX.utils.book_append_sheet(wb, wsFam, 'Familias');
+
+  // ── Hoja 2: Subfamilias ──
+  const subs = [...(DB.subfamilias||[])].sort((a,b) =>
+    (famById.get(a.familia_id)||'').localeCompare(famById.get(b.familia_id)||'')
+    || (((a.orden)??9999) - ((b.orden)??9999))
+    || (a.nombre||'').localeCompare(b.nombre||'')
+  );
+  const subData = [['FAMILIA','SUBFAMILIA','ORDEN','Nº PROD. ÁGORA','Nº PROD. DIJIT']];
+  subs.forEach(s => {
+    const famNom = famById.get(s.familia_id) || '';
+    const nProdA = (DB.productos_agora||[]).filter(p => (p.familia||'').toUpperCase().trim() === famNom && (p.subfamilia||'').trim() === s.nombre).length;
+    const nProdD = (DB.productos_dijit||[]).filter(p => (p.familia||'').toUpperCase().trim() === famNom && (p.subfamilia||'').trim() === s.nombre).length;
+    subData.push([famNom, s.nombre||'', (s.orden)??'', nProdA, nProdD]);
+  });
+  const wsSub = XLSX.utils.aoa_to_sheet(subData);
+  wsSub['!cols'] = [{wch:22},{wch:28},{wch:8},{wch:16},{wch:16}];
+  XLSX.utils.book_append_sheet(wb, wsSub, 'Subfamilias');
+
+  // ── Hoja 3: Productos Ágora ──
+  const pa = [...(DB.productos_agora||[])].sort((a,b) =>
+    (a.familia||'').localeCompare(b.familia||'')
+    || (a.subfamilia||'').localeCompare(b.subfamilia||'')
+    || (a.producto||'').localeCompare(b.producto||'')
+  );
+  const paData = [['ID','PRODUCTO','FAMILIA','SUBFAMILIA','FACTOR']];
+  pa.forEach(p => paData.push([p.id_prod||'', p.producto||'', p.familia||'', p.subfamilia||'', (p.factor)??'']));
+  const wsPa = XLSX.utils.aoa_to_sheet(paData);
+  wsPa['!cols'] = [{wch:12},{wch:40},{wch:16},{wch:20},{wch:8}];
+  XLSX.utils.book_append_sheet(wb, wsPa, 'Productos Ágora');
+
+  // ── Hoja 4: Productos Dijit ──
+  const pd = [...(DB.productos_dijit||[])].sort((a,b) =>
+    (a.familia||'').localeCompare(b.familia||'')
+    || (a.subfamilia||'').localeCompare(b.subfamilia||'')
+    || (a.descripcion||'').localeCompare(b.descripcion||'')
+  );
+  const pdData = [['ID','DESCRIPCIÓN','FAMILIA','SUBFAMILIA','FACTOR','UNIDADES']];
+  pd.forEach(p => pdData.push([p.id_interno||'', p.descripcion||'', p.familia||'', p.subfamilia||'', (p.factor)??'', p.unidades||'']));
+  const wsPd = XLSX.utils.aoa_to_sheet(pdData);
+  wsPd['!cols'] = [{wch:12},{wch:40},{wch:16},{wch:20},{wch:8},{wch:10}];
+  XLSX.utils.book_append_sheet(wb, wsPd, 'Productos Dijit');
+
+  const hoy = new Date().toISOString().substring(0,10);
+  XLSX.writeFile(wb, `clasificacion_${hoy}.xlsx`);
 }
 
 function renderCompras() {
