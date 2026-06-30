@@ -7717,28 +7717,64 @@ function descargarClasificacionExcel() {
   wsSub['!cols'] = [{wch:22},{wch:28},{wch:8},{wch:16},{wch:16}];
   XLSX.utils.book_append_sheet(wb, wsSub, 'Subfamilias');
 
-  // ── Hoja 3: Productos Ágora ──
+  // Orden canónico de centros para las columnas (los no listados van al final, alfabético)
+  const ORDEN_CENTROS = ['BINIFADET','BODEGA','TAMARINDOS','TAMARINDOS BAR','TIRANT','TIENDA','PRODUCCION','ESTRUCTURA'];
+  const ordenarCentros = set => [...set].sort((a,b) => {
+    let ia = ORDEN_CENTROS.indexOf(a), ib = ORDEN_CENTROS.indexOf(b);
+    if (ia < 0) ia = 999; if (ib < 0) ib = 999;
+    return (ia - ib) || a.localeCompare(b);
+  });
+  const r2 = x => Math.round((x||0)*100)/100;
+
+  // Agrega € (base) por producto y centro sobre TODO el histórico (sin filtro de
+  // fechas). idField enlaza el movimiento con el id del producto del catálogo.
+  function eurPorCentro(arr, idField) {
+    const centros = new Set();
+    const byProd  = new Map(); // idProducto -> Map(centro -> € acumulado)
+    for (const r of (arr||[])) {
+      const id = String(r[idField]||'').trim(); if (!id) continue;
+      const c  = (r.centro||'').trim();         if (!c)  continue;
+      centros.add(c);
+      let m = byProd.get(id); if (!m) { m = new Map(); byProd.set(id, m); }
+      m.set(c, (m.get(c)||0) + (r.base||0));
+    }
+    return { cols: ordenarCentros(centros), byProd };
+  }
+
+  // ── Hoja 3: Productos Ágora (ventas € por centro · ingresos.articulo ↔ id_prod) ──
+  const agg_pa = eurPorCentro(DB.ingresos, 'articulo');
   const pa = [...(DB.productos_agora||[])].sort((a,b) =>
     (a.familia||'').localeCompare(b.familia||'')
     || (a.subfamilia||'').localeCompare(b.subfamilia||'')
     || (a.producto||'').localeCompare(b.producto||'')
   );
-  const paData = [['ID','PRODUCTO','FAMILIA','SUBFAMILIA','FACTOR']];
-  pa.forEach(p => paData.push([p.id_prod||'', p.producto||'', p.familia||'', p.subfamilia||'', (p.factor)??'']));
+  const paData = [['ID','PRODUCTO','FAMILIA','SUBFAMILIA','FACTOR', ...agg_pa.cols, 'TOTAL €']];
+  pa.forEach(p => {
+    const m = agg_pa.byProd.get(String(p.id_prod||'').trim());
+    let tot = 0;
+    const cells = agg_pa.cols.map(c => { const v = m ? (m.get(c)||0) : 0; tot += v; return v > 0 ? r2(v) : ''; });
+    paData.push([p.id_prod||'', p.producto||'', p.familia||'', p.subfamilia||'', (p.factor)??'', ...cells, tot > 0 ? r2(tot) : '']);
+  });
   const wsPa = XLSX.utils.aoa_to_sheet(paData);
-  wsPa['!cols'] = [{wch:12},{wch:40},{wch:16},{wch:20},{wch:8}];
+  wsPa['!cols'] = [{wch:12},{wch:40},{wch:16},{wch:20},{wch:8}, ...agg_pa.cols.map(()=>({wch:13})), {wch:12}];
   XLSX.utils.book_append_sheet(wb, wsPa, 'Productos Ágora');
 
-  // ── Hoja 4: Productos Dijit ──
+  // ── Hoja 4: Productos Dijit (compras € por centro · gastos.id_prod ↔ id_interno) ──
+  const agg_pd = eurPorCentro(DB.gastos, 'id_prod');
   const pd = [...(DB.productos_dijit||[])].sort((a,b) =>
     (a.familia||'').localeCompare(b.familia||'')
     || (a.subfamilia||'').localeCompare(b.subfamilia||'')
     || (a.descripcion||'').localeCompare(b.descripcion||'')
   );
-  const pdData = [['ID','DESCRIPCIÓN','FAMILIA','SUBFAMILIA','FACTOR','UNIDADES']];
-  pd.forEach(p => pdData.push([p.id_interno||'', p.descripcion||'', p.familia||'', p.subfamilia||'', (p.factor)??'', p.unidades||'']));
+  const pdData = [['ID','DESCRIPCIÓN','FAMILIA','SUBFAMILIA','FACTOR','UNIDADES', ...agg_pd.cols, 'TOTAL €']];
+  pd.forEach(p => {
+    const m = agg_pd.byProd.get(String(p.id_interno||'').trim());
+    let tot = 0;
+    const cells = agg_pd.cols.map(c => { const v = m ? (m.get(c)||0) : 0; tot += v; return v > 0 ? r2(v) : ''; });
+    pdData.push([p.id_interno||'', p.descripcion||'', p.familia||'', p.subfamilia||'', (p.factor)??'', p.unidades||'', ...cells, tot > 0 ? r2(tot) : '']);
+  });
   const wsPd = XLSX.utils.aoa_to_sheet(pdData);
-  wsPd['!cols'] = [{wch:12},{wch:40},{wch:16},{wch:20},{wch:8},{wch:10}];
+  wsPd['!cols'] = [{wch:12},{wch:40},{wch:16},{wch:20},{wch:8},{wch:10}, ...agg_pd.cols.map(()=>({wch:13})), {wch:12}];
   XLSX.utils.book_append_sheet(wb, wsPd, 'Productos Dijit');
 
   const hoy = new Date().toISOString().substring(0,10);
