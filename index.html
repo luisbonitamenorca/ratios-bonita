@@ -1593,7 +1593,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
     <button class="escandallo-close" onclick="toggleEscandallo()">✕</button>
   </div>
   <div id="escandallo-messages" class="escandallo-messages">
-    <div class="escandallo-msg-bot">Hola, soy Catalina. Puedo mirar ingresos, compras y coste de personal por centro, y qué productos venden poco. Prueba algo como «¿cómo está Binifadet este mes?» o «qué platos venden menos en Tamarindos».</div>
+    <div class="escandallo-msg-bot">Hola, soy Catalina. Puedo analizar ingresos, compras, personal, presupuesto, ventas de un producto concreto y horas por departamento, en uno o todos los centros. Prueba algo como «¿qué centro vende más Binifadet Blanco?» o «qué departamento va peor en horas».</div>
   </div>
   <div class="escandallo-input-row">
     <input id="escandallo-input" type="text" placeholder="Escribe tu pregunta…" onkeydown="if(event.key==='Enter')enviarEscandallo()">
@@ -8901,36 +8901,155 @@ function escToolResumenCentro({ centro, anio, mes }) {
 
 function escToolRankingProductos({ centro, anio, mes, orden, limite }) {
   limite = Math.max(1, Math.min(limite || 10, 25));
-  const CT = (centro || '').toUpperCase().trim();
-  const rows = (DB.ingresos || [])
-    .filter(r => (r.centro || '').toUpperCase() === CT && escFiltroFecha(r, anio, mes))
-    .map(resolveIng);
+  const listaCentros = centro ? [centro.toUpperCase().trim()] : CENTROS;
 
-  const porProducto = {};
-  rows.forEach(r => {
-    const nombre = (r.producto || '(sin nombre)').trim();
-    if (!porProducto[nombre]) porProducto[nombre] = { producto: nombre, familia: r.familia || '', unidades: 0, ingresos_eur: 0 };
-    porProducto[nombre].unidades += (r.unidades || 0);
-    porProducto[nombre].ingresos_eur += (r.base || 0);
-  });
+  const paraCentro = (ct) => {
+    const rows = (DB.ingresos || [])
+      .filter(r => (r.centro || '').toUpperCase() === ct && escFiltroFecha(r, anio, mes))
+      .map(resolveIng);
 
-  let lista = Object.values(porProducto).filter(p => p.unidades > 0);
-  lista.sort((a, b) => orden === 'mas_vendidos' ? b.unidades - a.unidades : a.unidades - b.unidades);
-  lista = lista.slice(0, limite).map(p => ({ ...p, ingresos_eur: Math.round(p.ingresos_eur * 100) / 100 }));
+    const porProducto = {};
+    rows.forEach(r => {
+      const nombre = (r.producto || '(sin nombre)').trim();
+      if (!porProducto[nombre]) porProducto[nombre] = { producto: nombre, familia: r.familia || '', unidades: 0, ingresos_eur: 0 };
+      porProducto[nombre].unidades += (r.unidades || 0);
+      porProducto[nombre].ingresos_eur += (r.base || 0);
+    });
+
+    let lista = Object.values(porProducto).filter(p => p.unidades > 0);
+    lista.sort((a, b) => orden === 'mas_vendidos' ? b.unidades - a.unidades : a.unidades - b.unidades);
+    return lista.slice(0, limite).map(p => ({ ...p, ingresos_eur: Math.round(p.ingresos_eur * 100) / 100 }));
+  };
 
   return {
-    centro: CT,
     periodo: mes && mes > 0 ? `${mes}/${anio}` : `año ${anio} completo`,
     orden,
     aviso: 'Estos datos son solo unidades vendidas e ingresos. No incluyen margen ni coste de receta (todavía no hay escandallo de platos cargado), así que "poco valor" aquí es poca rotación/ingreso, no rentabilidad real.',
-    productos: lista
+    centros: listaCentros.map(ct => ({ centro: ct, productos: paraCentro(ct) }))
+  };
+}
+
+// Búsqueda flexible de ventas por nombre de producto/familia/subfamilia (coincidencia
+// parcial, sin distinguir mayúsculas). Agrega por centro. Para preguntas sobre UN producto
+// o familia concretos (p.ej. "botellas de Binifadet Blanco", "kg de mejillones").
+function escToolConsultarVentas({ busqueda, centro, anio, mes }) {
+  const q = (busqueda || '').toLowerCase().trim();
+  if (!q) return { error: 'Falta el término de búsqueda (parámetro busqueda).' };
+  const CT = centro ? centro.toUpperCase().trim() : null;
+
+  const rows = (DB.ingresos || [])
+    .filter(r => (!CT || (r.centro || '').toUpperCase() === CT) && escFiltroFecha(r, anio, mes))
+    .map(resolveIng)
+    .filter(r => {
+      const prod = (r.producto || '').toLowerCase();
+      const fam  = (r.familia || '').toLowerCase();
+      const sub  = (r.subfamilia || '').toLowerCase();
+      return prod.includes(q) || fam.includes(q) || sub.includes(q);
+    });
+
+  const periodo = mes && mes > 0 ? `${mes}/${anio}` : `año ${anio} completo`;
+  if (!rows.length) {
+    return { periodo, busqueda, encontrado: false, mensaje: 'No hay ventas que coincidan con esa búsqueda en ese periodo/centro. Prueba un término más corto o genérico antes de decir que no existe.' };
+  }
+
+  const porCentro = {};
+  rows.forEach(r => {
+    const ct = (r.centro || '').toUpperCase();
+    if (!porCentro[ct]) porCentro[ct] = { centro: ct, unidades: 0, ingresos_eur: 0 };
+    porCentro[ct].unidades += (r.unidades || 0);
+    porCentro[ct].ingresos_eur += (r.base || 0);
+  });
+  const desglosePorCentro = Object.values(porCentro)
+    .sort((a, b) => b.unidades - a.unidades)
+    .map(c => ({ ...c, ingresos_eur: Math.round(c.ingresos_eur * 100) / 100, unidades: Math.round(c.unidades * 100) / 100 }));
+
+  return {
+    periodo,
+    busqueda,
+    encontrado: true,
+    productos_que_coinciden: [...new Set(rows.map(r => r.producto))],
+    aviso_unidad: '"unidades" es como quedó registrada la venta en Ágora para ese producto (puede ser botellas, raciones, kg u otra unidad distinta según cómo esté dado de alta) — no asumas un tipo de unidad fijo, coméntaselo al usuario si no está claro.',
+    total_unidades: Math.round(rows.reduce((s, r) => s + (r.unidades || 0), 0) * 100) / 100,
+    total_ingresos_eur: Math.round(rows.reduce((s, r) => s + (r.base || 0), 0) * 100) / 100,
+    desglose_por_centro: desglosePorCentro
+  };
+}
+
+// Compara horas reales vs teóricas/contratadas por departamento, reutilizando el mismo
+// motor que ya usa la pestaña de RRHH (rrhhEnriquecido) — así coincide siempre con lo
+// que se ve ahí. Si no se pasa centro, agrega los 8 centros juntos por departamento.
+function escToolCompararHorasDepartamento({ centro, anio, mes }) {
+  const CT = centro ? centro.toUpperCase().trim() : null;
+  const rows = rrhhEnriquecido().filter(r => (!CT || (r.centro || '').toUpperCase() === CT) && escFiltroFecha(r, anio, mes));
+
+  const porDepto = {};
+  rows.forEach(r => {
+    const d = r.depto || 'OTROS';
+    if (!porDepto[d]) porDepto[d] = { departamento: d, horas_reales: 0, horas_teoricas: 0 };
+    porDepto[d].horas_reales += (r.real || 0);
+    porDepto[d].horas_teoricas += (r.teorico || 0);
+  });
+
+  const departamentos = Object.values(porDepto)
+    .map(d => ({
+      departamento: d.departamento,
+      horas_reales: Math.round(d.horas_reales * 10) / 10,
+      horas_teoricas: Math.round(d.horas_teoricas * 10) / 10,
+      desviacion_pct: d.horas_teoricas > 0 ? Math.round(((d.horas_reales - d.horas_teoricas) / d.horas_teoricas) * 1000) / 10 : null
+    }))
+    .sort((a, b) => (b.desviacion_pct || 0) - (a.desviacion_pct || 0));
+
+  return {
+    periodo: mes && mes > 0 ? `${mes}/${anio}` : `año ${anio} completo`,
+    centro: CT || 'todos los centros juntos',
+    guia_lectura: 'desviacion_pct positivo = más horas reales que teóricas/contratadas (posible sobrecarga o exceso); negativo = menos horas reales que teóricas (puede ser eficiencia o falta de cobertura). El signo no dice por sí solo cuál es "mejor" — coméntalo con el usuario en vez de asumirlo.',
+    departamentos
+  };
+}
+
+// Compara real vs presupuesto: ingresos (tabla `presupuesto`) y coste de personal
+// (tabla `presupuesto_nominas`). Si no se pasa centro, devuelve los 8 centros —
+// pensado para preguntas tipo "qué centros cumplen presupuesto".
+function escToolResumenPresupuesto({ anio, mes, centro }) {
+  const listaCentros = centro ? [centro.toUpperCase().trim()] : CENTROS;
+
+  const filaCentro = (ct) => {
+    const ingReal = (DB.ingresos || [])
+      .filter(r => (r.centro || '').toUpperCase() === ct && escFiltroFecha(r, anio, mes))
+      .reduce((s, r) => s + (r.base || 0), 0);
+    const ingPpto = (DB.presupuesto || [])
+      .filter(r => (r.centro || '').toUpperCase() === ct && escFiltroFecha(r, anio, mes))
+      .reduce((s, r) => s + (r.importe || 0), 0);
+    const persReal = nominasEfectivas()
+      .filter(r => (r.canal || '').toUpperCase() === ct && r.anio === anio && (!mes || mes === 0 || r.mes === mes))
+      .reduce((s, r) => s + (r.coste_total || 0), 0);
+    // presupuesto_nominas no distingue año en esta app (se carga el del año en curso), se filtra solo por canal+mes
+    const persPpto = (DB.presupuesto_nominas || [])
+      .filter(r => (r.canal || '').toUpperCase() === ct && (!mes || mes === 0 || r.mes === mes))
+      .reduce((s, r) => s + (r.importe || 0), 0);
+
+    return {
+      centro: ct,
+      ingresos_real_eur: Math.round(ingReal * 100) / 100,
+      ingresos_presupuesto_eur: Math.round(ingPpto * 100) / 100,
+      cumplimiento_ingresos_pct: ingPpto > 0 ? Math.round((ingReal / ingPpto) * 1000) / 10 : null,
+      personal_real_eur: Math.round(persReal * 100) / 100,
+      personal_presupuesto_eur: Math.round(persPpto * 100) / 100,
+      desviacion_personal_pct: persPpto > 0 ? Math.round(((persReal - persPpto) / persPpto) * 1000) / 10 : null
+    };
+  };
+
+  return {
+    periodo: mes && mes > 0 ? `${mes}/${anio}` : `año ${anio} completo`,
+    guia_lectura: 'cumplimiento_ingresos_pct: 100 o más = llega o supera el objetivo de ingresos (bien); menos de 100 = no llega. desviacion_personal_pct: positivo = coste de personal MAYOR que lo presupuestado (mal, sobrecoste); negativo = por debajo (bien). null en cualquier campo significa que no hay presupuesto cargado para ese centro/periodo.',
+    centros: listaCentros.map(filaCentro)
   };
 }
 
 const ESC_TOOLS = [
   {
     name: 'resumen_centro',
-    description: 'Resumen financiero de un centro para un periodo: ingresos, compras/gastos, coste de personal y los ratios compras/ingresos y personal/ingresos.',
+    description: 'Resumen financiero de un centro para un periodo: ingresos, compras/gastos, coste de personal y los ratios compras/ingresos y personal/ingresos. Son cifras reales, sin comparar contra presupuesto — para eso usa resumen_presupuesto.',
     input_schema: {
       type: 'object',
       properties: {
@@ -8943,25 +9062,68 @@ const ESC_TOOLS = [
   },
   {
     name: 'ranking_productos',
-    description: 'Productos de un centro/periodo ordenados por unidades vendidas, con sus ingresos. Sirve para ver qué platos venden poco o mucho. No calcula margen ni coste de receta.',
+    description: 'Productos de uno o varios centros ordenados por unidades vendidas, con sus ingresos. Sirve para ver qué platos venden poco o mucho. Si se omite centro, devuelve el ranking de cada uno de los 8 centros por separado — ideal para "productos menos vendidos de cada centro". No calcula margen ni coste de receta.',
     input_schema: {
       type: 'object',
       properties: {
-        centro:  { type: 'string', enum: CENTROS },
+        centro:  { type: 'string', enum: CENTROS, description: 'Opcional. Si se omite, devuelve el ranking de todos los centros.' },
         anio:    { type: 'integer' },
         mes:     { type: 'integer', description: '1-12, o 0 para el año completo' },
         orden:   { type: 'string', enum: ['menos_vendidos', 'mas_vendidos'] },
-        limite:  { type: 'integer', description: 'Cuántos productos devolver, máx 25' }
+        limite:  { type: 'integer', description: 'Cuántos productos por centro, máx 25' }
       },
-      required: ['centro', 'anio', 'mes', 'orden']
+      required: ['anio', 'mes', 'orden']
+    }
+  },
+  {
+    name: 'consultar_ventas',
+    description: 'Busca ventas de un producto, familia o subfamilia por nombre (coincidencia parcial, p.ej. "Binifadet Blanco" o "mejillones") y las agrega por centro. Úsala para cualquier pregunta sobre un producto o categoría concretos: cuánto se ha vendido, en qué centro más, etc. No calcula margen.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        busqueda: { type: 'string', description: 'Término a buscar en nombre de producto, familia o subfamilia' },
+        centro:   { type: 'string', enum: CENTROS, description: 'Opcional. Si se omite, agrega y desglosa por todos los centros.' },
+        anio:     { type: 'integer' },
+        mes:      { type: 'integer', description: '1-12, o 0 para el año completo / hasta hoy' }
+      },
+      required: ['busqueda', 'anio', 'mes']
+    }
+  },
+  {
+    name: 'comparar_horas_departamento',
+    description: 'Compara horas reales trabajadas contra horas teóricas/contratadas, agrupado por departamento (Cocina, Sala, etc.). Úsala para preguntas sobre qué departamento va mejor o peor en horas, sobrecarga o falta de cobertura. Si se omite centro, agrega todos los centros.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        centro: { type: 'string', enum: CENTROS, description: 'Opcional. Si se omite, agrega todos los centros.' },
+        anio:   { type: 'integer' },
+        mes:    { type: 'integer', description: '1-12, o 0 para el año completo' }
+      },
+      required: ['anio', 'mes']
+    }
+  },
+  {
+    name: 'resumen_presupuesto',
+    description: 'Compara cifras REALES contra el PRESUPUESTO cargado (ingresos objetivo y coste de personal objetivo) por centro y periodo. Úsala para cualquier pregunta sobre cumplimiento de presupuesto, objetivos o desviaciones. Si no se indica centro, devuelve los 8 centros a la vez — ideal para "qué centros cumplen y cuáles no".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        centro: { type: 'string', enum: CENTROS, description: 'Opcional. Si se omite, devuelve todos los centros.' },
+        anio:   { type: 'integer', description: 'Año, ej. 2026' },
+        mes:    { type: 'integer', description: '1-12. Usa 0 para el año completo / acumulado.' }
+      },
+      required: ['anio', 'mes']
     }
   }
 ];
 
 function escEjecutarTool(nombre, input) {
   try {
-    if (nombre === 'resumen_centro')    return escToolResumenCentro(input);
-    if (nombre === 'ranking_productos') return escToolRankingProductos(input);
+    if (nombre === 'resumen_centro')               return escToolResumenCentro(input);
+    if (nombre === 'ranking_productos')             return escToolRankingProductos(input);
+    if (nombre === 'consultar_ventas')              return escToolConsultarVentas(input);
+    if (nombre === 'comparar_horas_departamento')   return escToolCompararHorasDepartamento(input);
+    if (nombre === 'resumen_presupuesto')           return escToolResumenPresupuesto(input);
     return { error: 'herramienta desconocida: ' + nombre };
   } catch (e) {
     return { error: String((e && e.message) || e) };
@@ -8970,7 +9132,7 @@ function escEjecutarTool(nombre, input) {
 
 async function escLlamarClaude(messages) {
   const hoy = new Date().toISOString().slice(0, 10);
-  const system = `Eres Catalina, el asistente de datos de Ratios Food Cost (Bonita Menorca). Respondes en español, corto y directo, con euros formateados tipo "1.234,56 €" y sin tablas markdown (texto plano, este chat no renderiza markdown). Hoy es ${hoy}. Centros disponibles: ${CENTROS.join(', ')}. Usa las herramientas para cualquier cifra concreta — nunca inventes números. Si el usuario no da mes, usa el mes actual (según la fecha de hoy) y dilo explícitamente. Si preguntan por "platos que no aportan valor" o similar, usa ranking_productos con menos_vendidos y traslada el aviso de la herramienta: es popularidad/ingresos, no rentabilidad real, porque no hay coste de receta cargado todavía.`;
+  const system = `Eres Catalina, el asistente de datos de Ratios Food Cost (Bonita Menorca). Respondes en español, corto y directo, con euros formateados tipo "1.234,56 €" y sin tablas markdown (texto plano, este chat no renderiza markdown). Hoy es ${hoy}. Centros disponibles: ${CENTROS.join(', ')}. Usa las herramientas para cualquier cifra concreta — nunca inventes números ni asumas que no tienes un dato sin haber probado la herramienta relevante primero. Si el usuario no da mes, usa el mes actual (según la fecha de hoy) y dilo explícitamente. Para preguntas sobre un producto, familia o subfamilia concretos (p.ej. una marca de vino, un ingrediente), usa consultar_ventas. Para "platos que no aportan valor" o rankings, usa ranking_productos (sin centro si preguntan por varios o todos) y traslada su aviso: es popularidad/ingresos, no rentabilidad real, porque no hay coste de receta cargado todavía. Para cumplimiento de presupuesto u objetivos, usa resumen_presupuesto (sin centro si preguntan por varios o todos). Para comparar departamentos en horas, usa comparar_horas_departamento. Cuando una pregunta pida comparar varios o todos los centros o departamentos a la vez, omite el parámetro centro en vez de llamar la herramienta una vez por centro.`;
 
   const res = await fetch('/api/escandallo', {
     method: 'POST',
@@ -9012,7 +9174,7 @@ async function enviarEscandallo() {
     let data = await escLlamarClaude(messages);
     let vueltas = 0;
 
-    while (data.stop_reason === 'tool_use' && vueltas < 4) {
+    while (data.stop_reason === 'tool_use' && vueltas < 6) {
       vueltas++;
       messages.push({ role: 'assistant', content: data.content });
       const resultados = data.content
