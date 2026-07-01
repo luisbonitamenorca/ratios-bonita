@@ -420,6 +420,64 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
 .modal-title { font-size: 15px; font-weight: 500; margin-bottom: 16px; }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
 
+/* ── Escandallo (Copilot) ─────────────────────────────── */
+#escandallo-btn {
+  position: fixed; bottom: 22px; right: 22px; width: 52px; height: 52px;
+  border-radius: 50%; background: var(--green); color: #fff; border: none;
+  font-size: 21px; cursor: pointer; box-shadow: 0 4px 16px rgba(0,0,0,.2);
+  z-index: 300; display: flex; align-items: center; justify-content: center;
+  transition: transform .15s ease;
+}
+#escandallo-btn:hover { transform: scale(1.06); }
+
+.escandallo-panel {
+  position: fixed; bottom: 86px; right: 22px; width: min(380px, 94vw); height: min(560px, 76vh);
+  background: #fff; border-radius: var(--radius-lg); border: var(--border);
+  box-shadow: 0 8px 32px rgba(0,0,0,.18); z-index: 300;
+  display: none; flex-direction: column; overflow: hidden;
+}
+.escandallo-panel.open { display: flex; }
+@media (prefers-color-scheme: dark) { .escandallo-panel { background: #181818; } }
+
+.escandallo-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 13px 16px; border-bottom: var(--border); background: var(--green-light); flex-shrink: 0;
+}
+@media (prefers-color-scheme: dark) { .escandallo-header { background: #0a2e22; } }
+.escandallo-title { font-size: 14px; font-weight: 600; color: var(--green-dark); }
+@media (prefers-color-scheme: dark) { .escandallo-title { color: #9FE1CB; } }
+.escandallo-subtitle { font-size: 11px; color: #6b8f83; margin-top: 1px; }
+.escandallo-close { background: none; border: none; cursor: pointer; font-size: 15px; color: #888; padding: 4px; line-height: 1; }
+
+.escandallo-messages {
+  flex: 1; overflow-y: auto; padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 10px;
+  font-size: 12.5px; line-height: 1.5;
+}
+.escandallo-msg-bot { color: #333; max-width: 94%; white-space: pre-wrap; }
+@media (prefers-color-scheme: dark) { .escandallo-msg-bot { color: #ddd; } }
+.escandallo-msg-user {
+  align-self: flex-end; background: var(--green-light); color: var(--green-dark);
+  padding: 7px 12px; border-radius: 12px 12px 2px 12px; max-width: 85%; white-space: pre-wrap;
+}
+@media (prefers-color-scheme: dark) { .escandallo-msg-user { background: #0a2e22; color: #9FE1CB; } }
+.escandallo-msg-thinking { color: #aaa; font-style: italic; }
+
+.escandallo-input-row { display: flex; gap: 8px; padding: 12px; border-top: var(--border); flex-shrink: 0; }
+.escandallo-input-row input {
+  flex: 1; border: var(--border); border-radius: 6px; padding: 8px 10px;
+  font-size: 12.5px; font-family: inherit; background: transparent; color: inherit;
+}
+.escandallo-input-row button {
+  background: var(--green); color: #fff; border: none; border-radius: 6px;
+  width: 36px; cursor: pointer; font-size: 14px; flex-shrink: 0;
+}
+.escandallo-input-row button:disabled { opacity: .5; cursor: default; }
+
+@media (max-width: 480px) {
+  .escandallo-panel { width: 100vw; height: 100vh; bottom: 0; right: 0; border-radius: 0; }
+}
+
 /* ── Progress bars ────────────────────────────────────── */
 .bvs-row {
   display: flex;
@@ -1522,6 +1580,25 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
   </div>
 </div>
 
+<!-- ══════════════ ESCANDALLO — Copilot de datos ══════════════ -->
+<button id="escandallo-btn" onclick="toggleEscandallo()" title="Escandallo — pregúntame sobre tus datos">💬</button>
+
+<div id="escandallo-panel" class="escandallo-panel">
+  <div class="escandallo-header">
+    <div>
+      <div class="escandallo-title">Escandallo</div>
+      <div class="escandallo-subtitle">Pregúntame sobre tus datos</div>
+    </div>
+    <button class="escandallo-close" onclick="toggleEscandallo()">✕</button>
+  </div>
+  <div id="escandallo-messages" class="escandallo-messages">
+    <div class="escandallo-msg-bot">Hola. Puedo mirar ingresos, compras y coste de personal por centro, y qué productos venden poco. Prueba algo como «¿cómo está Binifadet este mes?» o «qué platos venden menos en Tamarindos».</div>
+  </div>
+  <div class="escandallo-input-row">
+    <input id="escandallo-input" type="text" placeholder="Escribe tu pregunta…" onkeydown="if(event.key==='Enter')enviarEscandallo()">
+    <button id="escandallo-send" onclick="enviarEscandallo()">➤</button>
+  </div>
+</div>
 
 <script>
 // data.js — Datos iniciales de Bonita Menorca
@@ -8702,6 +8779,207 @@ function renderComensales() {
     <td class="tr" style="color:#888">${ticketMedio25!==null?'€'+fmt(ticketMedio25):'—'}</td>
   </tr>`;
 }
+
+/* ══════════════════ ESCANDALLO — Copilot de datos ══════════════════
+   Asistente conversacional sobre los datos ya cargados en DB.
+   Usa "tool use" de la API de Claude: el modelo pide datos concretos,
+   este código los calcula localmente (sin exponer DB entera) y se los
+   devuelve, para que la respuesta final esté basada en cifras reales. */
+
+const CLAUDE_API_KEY = 'TU_API_KEY_AQUI'; // ← pega aquí tu clave de console.anthropic.com (misma que usa Compras, o una nueva)
+const CLAUDE_MODEL   = 'claude-sonnet-5';
+let escandalloHistory = [];
+let escandalloEnCurso = false;
+
+function toggleEscandallo() {
+  const p = document.getElementById('escandallo-panel');
+  p.classList.toggle('open');
+  if (p.classList.contains('open')) document.getElementById('escandallo-input').focus();
+}
+
+function escAddMsg(role, texto) {
+  const box = document.getElementById('escandallo-messages');
+  const div = document.createElement('div');
+  div.className = role === 'user' ? 'escandallo-msg-user' : 'escandallo-msg-bot';
+  div.textContent = texto;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+  return div;
+}
+
+/* ── Herramientas: se ejecutan en local sobre DB, ya cargado en memoria ── */
+
+function escFiltroFecha(r, anio, mes) {
+  const okAnio = r.anio ? r.anio === anio : String(r.fecha || '').slice(0, 4) === String(anio);
+  if (!okAnio) return false;
+  if (mes && mes > 0) {
+    const m = r.mes != null ? r.mes : parseInt(String(r.fecha || '').slice(5, 7), 10);
+    if (m !== mes) return false;
+  }
+  return true;
+}
+
+function escToolResumenCentro({ centro, anio, mes }) {
+  const CT = (centro || '').toUpperCase().trim();
+  const ing = (DB.ingresos || []).filter(r => (r.centro || '').toUpperCase() === CT && escFiltroFecha(r, anio, mes));
+  const gas = (DB.gastos   || []).filter(r => (r.centro || '').toUpperCase() === CT && escFiltroFecha(r, anio, mes));
+  const nom = nominasEfectivas().filter(r => (r.canal || '').toUpperCase() === CT && r.anio === anio && (!mes || mes === 0 || r.mes === mes));
+
+  const totalIngresos = ing.reduce((s, r) => s + (r.base || 0), 0);
+  const totalCompras  = gas.reduce((s, r) => s + (r.base || r.importe || 0), 0);
+  const totalPersonal = nom.reduce((s, r) => s + (r.coste_total || 0), 0);
+
+  return {
+    centro: CT,
+    periodo: mes && mes > 0 ? `${mes}/${anio}` : `año ${anio} completo`,
+    ingresos_eur: Math.round(totalIngresos * 100) / 100,
+    compras_eur: Math.round(totalCompras * 100) / 100,
+    coste_personal_eur: Math.round(totalPersonal * 100) / 100,
+    ratio_compras_sobre_ingresos: totalIngresos > 0 ? Math.round((totalCompras / totalIngresos) * 1000) / 1000 : null,
+    ratio_personal_sobre_ingresos: totalIngresos > 0 ? Math.round((totalPersonal / totalIngresos) * 1000) / 1000 : null,
+    filas_ingresos_encontradas: ing.length
+  };
+}
+
+function escToolRankingProductos({ centro, anio, mes, orden, limite }) {
+  limite = Math.max(1, Math.min(limite || 10, 25));
+  const CT = (centro || '').toUpperCase().trim();
+  const rows = (DB.ingresos || [])
+    .filter(r => (r.centro || '').toUpperCase() === CT && escFiltroFecha(r, anio, mes))
+    .map(resolveIng);
+
+  const porProducto = {};
+  rows.forEach(r => {
+    const nombre = (r.producto || '(sin nombre)').trim();
+    if (!porProducto[nombre]) porProducto[nombre] = { producto: nombre, familia: r.familia || '', unidades: 0, ingresos_eur: 0 };
+    porProducto[nombre].unidades += (r.unidades || 0);
+    porProducto[nombre].ingresos_eur += (r.base || 0);
+  });
+
+  let lista = Object.values(porProducto).filter(p => p.unidades > 0);
+  lista.sort((a, b) => orden === 'mas_vendidos' ? b.unidades - a.unidades : a.unidades - b.unidades);
+  lista = lista.slice(0, limite).map(p => ({ ...p, ingresos_eur: Math.round(p.ingresos_eur * 100) / 100 }));
+
+  return {
+    centro: CT,
+    periodo: mes && mes > 0 ? `${mes}/${anio}` : `año ${anio} completo`,
+    orden,
+    aviso: 'Estos datos son solo unidades vendidas e ingresos. No incluyen margen ni coste de receta (todavía no hay escandallo de platos cargado), así que "poco valor" aquí es poca rotación/ingreso, no rentabilidad real.',
+    productos: lista
+  };
+}
+
+const ESC_TOOLS = [
+  {
+    name: 'resumen_centro',
+    description: 'Resumen financiero de un centro para un periodo: ingresos, compras/gastos, coste de personal y los ratios compras/ingresos y personal/ingresos.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        centro: { type: 'string', enum: CENTROS },
+        anio:   { type: 'integer', description: 'Año, ej. 2026' },
+        mes:    { type: 'integer', description: '1-12. Usa 0 para el año completo.' }
+      },
+      required: ['centro', 'anio', 'mes']
+    }
+  },
+  {
+    name: 'ranking_productos',
+    description: 'Productos de un centro/periodo ordenados por unidades vendidas, con sus ingresos. Sirve para ver qué platos venden poco o mucho. No calcula margen ni coste de receta.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        centro:  { type: 'string', enum: CENTROS },
+        anio:    { type: 'integer' },
+        mes:     { type: 'integer', description: '1-12, o 0 para el año completo' },
+        orden:   { type: 'string', enum: ['menos_vendidos', 'mas_vendidos'] },
+        limite:  { type: 'integer', description: 'Cuántos productos devolver, máx 25' }
+      },
+      required: ['centro', 'anio', 'mes', 'orden']
+    }
+  }
+];
+
+function escEjecutarTool(nombre, input) {
+  try {
+    if (nombre === 'resumen_centro')    return escToolResumenCentro(input);
+    if (nombre === 'ranking_productos') return escToolRankingProductos(input);
+    return { error: 'herramienta desconocida: ' + nombre };
+  } catch (e) {
+    return { error: String((e && e.message) || e) };
+  }
+}
+
+async function escLlamarClaude(messages) {
+  const hoy = new Date().toISOString().slice(0, 10);
+  const system = `Eres Escandallo, el asistente de datos de Ratios Food Cost (Bonita Menorca). Respondes en español, corto y directo, con euros formateados tipo "1.234,56 €" y sin tablas markdown (texto plano, este chat no renderiza markdown). Hoy es ${hoy}. Centros disponibles: ${CENTROS.join(', ')}. Usa las herramientas para cualquier cifra concreta — nunca inventes números. Si el usuario no da mes, usa el mes actual (según la fecha de hoy) y dilo explícitamente. Si preguntan por "platos que no aportan valor" o similar, usa ranking_productos con menos_vendidos y traslada el aviso de la herramienta: es popularidad/ingresos, no rentabilidad real, porque no hay coste de receta cargado todavía.`;
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': CLAUDE_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 1200, system, tools: ESC_TOOLS, messages })
+  });
+  if (!res.ok) {
+    const detalle = await res.json().catch(() => ({}));
+    throw new Error('HTTP ' + res.status + ' — ' + ((detalle.error && detalle.error.message) || 'error desconocido'));
+  }
+  return res.json();
+}
+
+async function enviarEscandallo() {
+  if (escandalloEnCurso) return;
+  const input = document.getElementById('escandallo-input');
+  const texto = input.value.trim();
+  if (!texto) return;
+
+  if (!CLAUDE_API_KEY || CLAUDE_API_KEY.indexOf('TU_') === 0) {
+    escAddMsg('bot', 'Todavía no tengo API key configurada. Añádela en el código, constante CLAUDE_API_KEY (arriba del todo del bloque Escandallo).');
+    return;
+  }
+
+  input.value = '';
+  escAddMsg('user', texto);
+  escandalloHistory.push({ role: 'user', content: texto });
+
+  escandalloEnCurso = true;
+  document.getElementById('escandallo-send').disabled = true;
+  const pensando = escAddMsg('bot', 'Mirando datos…');
+  pensando.classList.add('escandallo-msg-thinking');
+
+  try {
+    let messages = escandalloHistory.slice();
+    let data = await escLlamarClaude(messages);
+    let vueltas = 0;
+
+    while (data.stop_reason === 'tool_use' && vueltas < 4) {
+      vueltas++;
+      messages.push({ role: 'assistant', content: data.content });
+      const resultados = data.content
+        .filter(b => b.type === 'tool_use')
+        .map(b => ({ type: 'tool_result', tool_use_id: b.id, content: JSON.stringify(escEjecutarTool(b.name, b.input)) }));
+      messages.push({ role: 'user', content: resultados });
+      data = await escLlamarClaude(messages);
+    }
+
+    const textoFinal = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim() || '(sin respuesta)';
+    pensando.remove();
+    escAddMsg('bot', textoFinal);
+    escandalloHistory.push({ role: 'assistant', content: data.content });
+    if (escandalloHistory.length > 16) escandalloHistory = escandalloHistory.slice(-16);
+  } catch (e) {
+    pensando.remove();
+    escAddMsg('bot', 'No he podido consultarlo: ' + ((e && e.message) || e));
+  } finally {
+    escandalloEnCurso = false;
+    document.getElementById('escandallo-send').disabled = false;
+  }
+}
+
 
 </script>
 </body>
