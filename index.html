@@ -8910,7 +8910,7 @@ function escToolRankingProductos({ centro, anio, mes, orden, limite }) {
 
     const porProducto = {};
     rows.forEach(r => {
-      const nombre = (r.producto || '(sin nombre)').trim();
+      const nombre = (r.descripcion || '(sin nombre)').trim();
       if (!porProducto[nombre]) porProducto[nombre] = { producto: nombre, familia: r.familia || '', unidades: 0, ingresos_eur: 0 };
       porProducto[nombre].unidades += (r.unidades || 0);
       porProducto[nombre].ingresos_eur += (r.base || 0);
@@ -8941,7 +8941,7 @@ function escToolConsultarVentas({ busqueda, centro, anio, mes }) {
     .filter(r => (!CT || (r.centro || '').toUpperCase() === CT) && escFiltroFecha(r, anio, mes))
     .map(resolveIng)
     .filter(r => {
-      const prod = (r.producto || '').toLowerCase();
+      const prod = (r.descripcion || '').toLowerCase();
       const fam  = (r.familia || '').toLowerCase();
       const sub  = (r.subfamilia || '').toLowerCase();
       return prod.includes(q) || fam.includes(q) || sub.includes(q);
@@ -8953,25 +8953,35 @@ function escToolConsultarVentas({ busqueda, centro, anio, mes }) {
   }
 
   const porCentro = {};
+  const porProducto = {};
   rows.forEach(r => {
     const ct = (r.centro || '').toUpperCase();
     if (!porCentro[ct]) porCentro[ct] = { centro: ct, unidades: 0, ingresos_eur: 0 };
     porCentro[ct].unidades += (r.unidades || 0);
     porCentro[ct].ingresos_eur += (r.base || 0);
+
+    const nombre = (r.descripcion || '(sin nombre)').trim();
+    if (!porProducto[nombre]) porProducto[nombre] = { producto: nombre, unidades: 0, ingresos_eur: 0 };
+    porProducto[nombre].unidades += (r.unidades || 0);
+    porProducto[nombre].ingresos_eur += (r.base || 0);
   });
   const desglosePorCentro = Object.values(porCentro)
     .sort((a, b) => b.unidades - a.unidades)
     .map(c => ({ ...c, ingresos_eur: Math.round(c.ingresos_eur * 100) / 100, unidades: Math.round(c.unidades * 100) / 100 }));
+  const desglosePorProducto = Object.values(porProducto)
+    .sort((a, b) => b.unidades - a.unidades)
+    .map(p => ({ ...p, ingresos_eur: Math.round(p.ingresos_eur * 100) / 100, unidades: Math.round(p.unidades * 100) / 100 }));
 
   return {
     periodo,
     busqueda,
     encontrado: true,
-    productos_que_coinciden: [...new Set(rows.map(r => r.producto))],
+    aviso_formatos: 'La búsqueda encuentra cualquier artículo cuyo nombre contenga el término, y eso puede incluir formatos distintos del mismo producto (botella, copa, media copa...) — usa desglose_por_producto para separarlos si la pregunta pide un formato concreto (p.ej. "botellas" vs "copas").',
     aviso_unidad: '"unidades" es como quedó registrada la venta en Ágora para ese producto (puede ser botellas, raciones, kg u otra unidad distinta según cómo esté dado de alta) — no asumas un tipo de unidad fijo, coméntaselo al usuario si no está claro.',
     total_unidades: Math.round(rows.reduce((s, r) => s + (r.unidades || 0), 0) * 100) / 100,
     total_ingresos_eur: Math.round(rows.reduce((s, r) => s + (r.base || 0), 0) * 100) / 100,
-    desglose_por_centro: desglosePorCentro
+    desglose_por_centro: desglosePorCentro,
+    desglose_por_producto: desglosePorProducto
   };
 }
 
@@ -9173,8 +9183,10 @@ async function enviarEscandallo() {
     let messages = escandalloHistory.slice();
     let data = await escLlamarClaude(messages);
     let vueltas = 0;
+    let agotado = false;
 
-    while (data.stop_reason === 'tool_use' && vueltas < 6) {
+    while (data.stop_reason === 'tool_use') {
+      if (vueltas >= 6) { agotado = true; break; }
       vueltas++;
       messages.push({ role: 'assistant', content: data.content });
       const resultados = data.content
@@ -9182,6 +9194,15 @@ async function enviarEscandallo() {
         .map(b => ({ type: 'tool_result', tool_use_id: b.id, content: JSON.stringify(escEjecutarTool(b.name, b.input)) }));
       messages.push({ role: 'user', content: resultados });
       data = await escLlamarClaude(messages);
+    }
+
+    if (agotado) {
+      // No se añade nada a escandalloHistory: data.content trae tool_use sin su
+      // tool_result todavía, y guardarlo dejaría la conversación inválida para la
+      // API en el siguiente mensaje. Se descarta este intento entero.
+      pensando.remove();
+      escAddMsg('bot', 'Esta pregunta necesitaba más pasos de los que tengo permitidos ahora mismo. Prueba a dividirla en partes más concretas (un centro, un producto o un periodo cada vez).');
+      return;
     }
 
     const textoFinal = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim() || '(sin respuesta)';
