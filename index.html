@@ -6115,6 +6115,16 @@ async function loadFromStorage() {
     invalidateStockCache();
     // Construir índices para resolución dinámica de familia/subfamilia
     rebuildProductIndex();
+    // ── Materializar la resolución de familias sobre los datos en memoria ──
+    // El catálogo es la ÚNICA fuente de verdad de familia/subfamilia. Algunas
+    // vistas usan resolveIng/resolveGas al renderizar, pero otras leen
+    // r.familia directamente. Re-resolviendo aquí una sola vez, todas las
+    // vistas quedan corregidas aunque el dato persistido en Supabase venga
+    // mal clasificado (p. ej. una carga hecha con el catálogo sin cargar).
+    // Idempotente: resolveIng/resolveGas devuelven la fila intacta si no hay
+    // match en catálogo.
+    DB.ingresos = DB.ingresos.map(resolveIng);
+    DB.gastos   = DB.gastos.map(resolveGas);
     const total = DB.ingresos.length + DB.gastos.length + DB.presupuesto.length + DB.rrhh.length + DB.nominas.length + DB.presupuesto_nominas.length + DB.visitas.length + DB.comensales.length + DB.ingresos_historico.length;
     setSyncStatus(total > 0 ? `✓ ${total} registros` : 'Sin datos', '#1D9E75');
     setTimeout(() => setSyncStatus('', '#888'), 3000);
@@ -6354,6 +6364,22 @@ async function handleXlFile(file) {
   const ecoSheetDetectada = findEcommerceSheet(wb);   // detección por firma de columnas (fichero NURIA)
   if (hojasPresentes.length === 0 && !ecoSheetDetectada) {
     document.getElementById('xl-msg').textContent = '⚠ Este archivo no contiene ninguna pestaña reconocida. Pestañas esperadas: ' + Object.keys(HOJAS_CONOCIDAS).join(', ') + ', o un export de Shopify (NURIA).';
+    document.getElementById('xl-msg').style.color = 'var(--red)';
+    return;
+  }
+  // ── GUARD: el catálogo debe estar cargado ANTES de parsear ventas/compras ──
+  // La familia/subfamilia de cada fila se resuelve contra el catálogo en memoria.
+  // Si la carga inicial de Supabase aún no ha terminado (o falló en silencio),
+  // el catálogo está vacío y TODO se clasificaría como VARIOS sin avisar.
+  // Este guard bloquea la subida en ese caso: es la causa raíz de las cargas
+  // de Dakota con ingresos bien pero clasificación mal.
+  if (hojasPresentes.includes('AGORA') && (DB.productos_agora||[]).length === 0) {
+    document.getElementById('xl-msg').textContent = '⚠ El catálogo de productos Ágora aún no se ha cargado (la app sigue sincronizando o hubo un error de conexión). Espera unos segundos a que arriba ponga "✓ N registros" y vuelve a subir el archivo. Si persiste, recarga la página.';
+    document.getElementById('xl-msg').style.color = 'var(--red)';
+    return;
+  }
+  if (hojasPresentes.includes('DIJIT') && (DB.productos_dijit||[]).length === 0) {
+    document.getElementById('xl-msg').textContent = '⚠ El catálogo de productos Dijit aún no se ha cargado (la app sigue sincronizando o hubo un error de conexión). Espera unos segundos a que arriba ponga "✓ N registros" y vuelve a subir el archivo. Si persiste, recarga la página.';
     document.getElementById('xl-msg').style.color = 'var(--red)';
     return;
   }
@@ -7122,6 +7148,11 @@ async function handleXlFile(file) {
     aplicarAjustesIngresos();   // aplicar el ajuste también justo tras la carga del Excel
     // Reconstruir índices tras añadir productos nuevos
     rebuildProductIndex();
+    // Misma materialización que en loadFromStorage: garantiza que todas las
+    // vistas (también las que leen r.familia directamente) vean la familia
+    // del catálogo justo después de una carga de Excel.
+    DB.ingresos = DB.ingresos.map(resolveIng);
+    DB.gastos   = DB.gastos.map(resolveGas);
 
     const total = ingRows.length + gasRows.length + pptoRows.length + rrhhRows.length + nomRows.length + pnomRows.length + visRows.length + coRows.length + ingHistRows.length;
     // Resumen de qué tablas se han actualizado en esta carga
