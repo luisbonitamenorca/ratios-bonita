@@ -68,14 +68,37 @@ body {
   body { background: #111; color: #e8e8e8; }
 }
 
-/* ── Layout ───────────────────────────────────────────── */
-#app { max-width: 1280px; margin: 0 auto; padding: 0 16px 40px; }
+/* ── Layout: menú lateral + columna principal ─────────── */
+#app { display: flex; align-items: flex-start; min-height: 100vh; }
+
+.side-nav {
+  width: 200px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  background: #fdfdfc;
+  border-right: var(--border);
+  padding: 18px 10px 18px 14px;
+  display: flex;
+  flex-direction: column;
+}
+@media (prefers-color-scheme: dark) { .side-nav { background: #161616; } }
+
+.side-brand { padding: 0 4px 14px; border-bottom: var(--border); margin-bottom: 12px; }
+.side-version { margin-top: auto; padding: 12px 4px 0; font-size: 10px; color: #aaa; }
+
+/* La columna principal comparte un único contenedor de ancho máximo:
+   la cabecera y TODAS las pestañas quedan alineadas por construcción. */
+.main-col { flex: 1; min-width: 0; padding: 0 16px 40px; }
+.main-inner { max-width: 1280px; margin: 0 auto; }
 
 .app-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 20px 0 16px;
+  justify-content: flex-end;
+  padding: 14px 0 12px;
   border-bottom: var(--border);
   margin-bottom: 0;
   flex-wrap: wrap;
@@ -90,29 +113,43 @@ body {
 
 .content { padding-top: 16px; }
 
-/* ── Tabs ─────────────────────────────────────────────── */
+/* ── Tabs (menú vertical) ─────────────────────────────── */
 .tabs-nav {
   display: flex;
-  gap: 2px;
-  border-bottom: var(--border);
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-  overflow-x: auto;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .tab-btn {
-  padding: 8px 13px;
+  padding: 8px 10px;
   border: none;
   background: none;
   cursor: pointer;
   color: #888;
   font-size: 12px;
-  border-bottom: 2px solid transparent;
+  text-align: left;
+  width: 100%;
+  border-left: 3px solid transparent;
+  border-radius: 0 6px 6px 0;
   white-space: nowrap;
-  transition: color .15s, border-color .15s;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color .15s, border-color .15s, background .15s;
 }
-.tab-btn.active { color: var(--green); border-bottom-color: var(--green); font-weight: 500; }
-.tab-btn:hover:not(.active) { color: #1a1a1a; }
+.tab-btn.active { color: var(--green); border-left-color: var(--green); background: rgba(29,158,117,.09); font-weight: 500; }
+.tab-btn:hover:not(.active) { color: #1a1a1a; background: rgba(0,0,0,.04); }
+@media (prefers-color-scheme: dark) { .tab-btn:hover:not(.active) { color: #e8e8e8; background: rgba(255,255,255,.06); } }
+
+/* Móvil / pantallas estrechas: el menú vuelve arriba en horizontal */
+@media (max-width: 900px) {
+  #app { flex-direction: column; }
+  .side-nav { position: static; width: 100%; height: auto; border-right: none; border-bottom: var(--border); padding: 12px 12px 0; }
+  .side-brand { border-bottom: none; padding-bottom: 8px; margin-bottom: 4px; }
+  .side-version { display: none; }
+  .tabs-nav { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; gap: 2px; padding-bottom: 6px; }
+  .tab-btn { width: auto; border-left: none; border-bottom: 2px solid transparent; border-radius: 0; }
+  .tab-btn.active { border-left: none; border-bottom-color: var(--green); background: none; }
+}
 
 .tab-pane { display: none; }
 .tab-pane.active { display: block; }
@@ -531,13 +568,39 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
 
 <div id="app" style="display:none">
 
-  <!-- HEADER -->
-  <header class="app-header">
-    <div class="header-left">
+  <!-- BARRA LATERAL -->
+  <aside class="side-nav">
+    <div class="side-brand">
       <div class="app-title">Ratios Food Cost</div>
       <div class="app-subtitle">Bonita Menorca · Temporada 2026</div>
       <div id="sem-actual" style="margin-top:6px;display:inline-block;padding:4px 10px;background:#1D9E75;color:#fff;font-size:11px;font-weight:500;border-radius:4px;letter-spacing:.3px;"></div>
     </div>
+    <nav class="tabs-nav">
+      <button class="tab-btn active" onclick="showTab('dash',this)">Ingresos</button>
+      <button class="tab-btn" onclick="showTab('semanal',this)">Compras por familia</button>
+      <button class="tab-btn" onclick="showTab('subfamilia',this)">Por subfamilia</button>
+      <button class="tab-btn" onclick="showTab('control-prod',this)">🔍 Control producto</button>
+      <button class="tab-btn" onclick="showTab('resumen-ventas',this)">📊 Ventas</button>
+      <button class="tab-btn" onclick="showTab('resumen-vino',this)">🍷 Vino</button>
+      <button class="tab-btn" onclick="showTab('resumen-compras',this)">🛒 Compras</button>
+      <button class="tab-btn" onclick="showTab('salarios',this)">💶 Salarios</button>
+      <button class="tab-btn" onclick="showTab('asiento',this)">🧾 Asiento Nóminas</button>
+      <button class="tab-btn" onclick="showTab('rrhh',this)">👥 Fichajes</button>
+      <button class="tab-btn" onclick="showTab('visitas',this)">🎫 Visitas</button>
+      <button class="tab-btn" onclick="showTab('comensales',this)">🍽️ Comensales</button>
+      <button class="tab-btn" onclick="showTab('clasif',this)">🏷️ Clasificación</button>
+      <button class="tab-btn" onclick="showTab('inventarios',this)">📦 Inventarios</button>
+      <button class="tab-btn" onclick="showTab('ecommerce',this)">🛍️ Ecommerce</button>
+      <button class="tab-btn" onclick="showTab('documentos',this)">📁 Documentos</button>
+    </nav>
+    <div class="side-version" id="app-version"></div>
+  </aside>
+
+  <!-- COLUMNA PRINCIPAL -->
+  <div class="main-col"><div class="main-inner">
+
+  <!-- HEADER -->
+  <header class="app-header">
     <div class="header-controls">
       <span id="sync-status" style="font-size:11px;color:#888;margin-right:4px;"></span>
       <label style="font-size:11px;color:#888;">Desde</label>
@@ -566,25 +629,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
     <div id="df-list" style="display:flex;flex-wrap:wrap;gap:14px;"></div>
   </div>
 
-  <!-- MAIN TABS -->
-  <nav class="tabs-nav">
-    <button class="tab-btn active" onclick="showTab('dash',this)">Ingresos</button>
-    <button class="tab-btn" onclick="showTab('semanal',this)">Compras por familia</button>
-    <button class="tab-btn" onclick="showTab('subfamilia',this)">Por subfamilia</button>
-    <button class="tab-btn" onclick="showTab('control-prod',this)">🔍 Control producto</button>
-    <button class="tab-btn" onclick="showTab('resumen-ventas',this)">📊 Ventas</button>
-    <button class="tab-btn" onclick="showTab('resumen-vino',this)">🍷 Vino</button>
-    <button class="tab-btn" onclick="showTab('resumen-compras',this)">🛒 Compras</button>
-    <button class="tab-btn" onclick="showTab('salarios',this)">💶 Salarios</button>
-    <button class="tab-btn" onclick="showTab('asiento',this)">🧾 Asiento Nóminas</button>
-    <button class="tab-btn" onclick="showTab('rrhh',this)">👥 Fichajes</button>
-    <button class="tab-btn" onclick="showTab('visitas',this)">🎫 Visitas</button>
-    <button class="tab-btn" onclick="showTab('comensales',this)">🍽️ Comensales</button>
-    <button class="tab-btn" onclick="showTab('clasif',this)">🏷️ Clasificación</button>
-    <button class="tab-btn" onclick="showTab('inventarios',this)">📦 Inventarios</button>
-    <button class="tab-btn" onclick="showTab('ecommerce',this)">🛍️ Ecommerce</button>
-    <button class="tab-btn" onclick="showTab('documentos',this)">📁 Documentos</button>
-  </nav>
+  <!-- MAIN TABS: movidas a la barra lateral -->
 
   <main class="content">
 
@@ -685,10 +730,6 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
         </table></div>
       </div>
     </div>
-
-    </div>
-
-
 
     <!-- ══════════════ CONTROL PRODUCTO ══════════════ -->
     <div id="tab-control-prod" class="tab-pane">
@@ -1538,6 +1579,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
     </div>
 
   </main>
+
+  </div></div><!-- /main-inner /main-col -->
 </div>
 
 <!-- ══════════════ MODALES ══════════════ -->
@@ -1673,6 +1716,13 @@ const DB = {
 </script>
 <script>
 // app.js — Lógica principal · Ratios Food Cost · Bonita Menorca
+// Versión del build: visible en la barra lateral y en consola para diagnosticar cachés.
+const APP_VERSION = '2026-07-18.1';
+console.log('Ratios Food Cost · build', APP_VERSION);
+document.addEventListener('DOMContentLoaded', () => {
+  const v = document.getElementById('app-version');
+  if (v) v.textContent = 'build ' + APP_VERSION;
+});
 const MESES = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 // Convierte un mes a número 1-12. Acepta número (1..12) o nombre en español
 // (con/sin acentos, mayús/minús, nombre completo o abreviado de 3 letras). Devuelve 0 si no reconoce.
@@ -4056,7 +4106,7 @@ function doLogin() {
   if (val === PASS_HASH) {
     sessionStorage.setItem('ratios_auth', '1');
     document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
+    document.getElementById('app').style.display = 'flex';
     initApp();
   } else {
     document.getElementById('login-err').style.display = 'block';
@@ -6325,7 +6375,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Si ya estaba autenticado en esta sesión, entrar directamente
   if (sessionStorage.getItem('ratios_auth') === '1') {
     document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
+    document.getElementById('app').style.display = 'flex';
     initApp();
   } else {
     // Mostrar login, foco en el campo
