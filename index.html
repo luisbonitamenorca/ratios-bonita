@@ -457,64 +457,6 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
 .modal-title { font-size: 15px; font-weight: 500; margin-bottom: 16px; }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
 
-/* ── Escandallo (Copilot) ─────────────────────────────── */
-#escandallo-btn {
-  position: fixed; bottom: 22px; right: 22px; width: 52px; height: 52px;
-  border-radius: 50%; background: var(--green); color: #fff; border: none;
-  font-size: 21px; cursor: pointer; box-shadow: 0 4px 16px rgba(0,0,0,.2);
-  z-index: 300; display: flex; align-items: center; justify-content: center;
-  transition: transform .15s ease;
-}
-#escandallo-btn:hover { transform: scale(1.06); }
-
-.escandallo-panel {
-  position: fixed; bottom: 86px; right: 22px; width: min(380px, 94vw); height: min(560px, 76vh);
-  background: #fff; border-radius: var(--radius-lg); border: var(--border);
-  box-shadow: 0 8px 32px rgba(0,0,0,.18); z-index: 300;
-  display: none; flex-direction: column; overflow: hidden;
-}
-.escandallo-panel.open { display: flex; }
-@media (prefers-color-scheme: dark) { .escandallo-panel { background: #181818; } }
-
-.escandallo-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 13px 16px; border-bottom: var(--border); background: var(--green-light); flex-shrink: 0;
-}
-@media (prefers-color-scheme: dark) { .escandallo-header { background: #0a2e22; } }
-.escandallo-title { font-size: 14px; font-weight: 600; color: var(--green-dark); }
-@media (prefers-color-scheme: dark) { .escandallo-title { color: #9FE1CB; } }
-.escandallo-subtitle { font-size: 11px; color: #6b8f83; margin-top: 1px; }
-.escandallo-close { background: none; border: none; cursor: pointer; font-size: 15px; color: #888; padding: 4px; line-height: 1; }
-
-.escandallo-messages {
-  flex: 1; overflow-y: auto; padding: 14px 16px;
-  display: flex; flex-direction: column; gap: 10px;
-  font-size: 12.5px; line-height: 1.5;
-}
-.escandallo-msg-bot { color: #333; max-width: 94%; white-space: pre-wrap; }
-@media (prefers-color-scheme: dark) { .escandallo-msg-bot { color: #ddd; } }
-.escandallo-msg-user {
-  align-self: flex-end; background: var(--green-light); color: var(--green-dark);
-  padding: 7px 12px; border-radius: 12px 12px 2px 12px; max-width: 85%; white-space: pre-wrap;
-}
-@media (prefers-color-scheme: dark) { .escandallo-msg-user { background: #0a2e22; color: #9FE1CB; } }
-.escandallo-msg-thinking { color: #aaa; font-style: italic; }
-
-.escandallo-input-row { display: flex; gap: 8px; padding: 12px; border-top: var(--border); flex-shrink: 0; }
-.escandallo-input-row input {
-  flex: 1; border: var(--border); border-radius: 6px; padding: 8px 10px;
-  font-size: 12.5px; font-family: inherit; background: transparent; color: inherit;
-}
-.escandallo-input-row button {
-  background: var(--green); color: #fff; border: none; border-radius: 6px;
-  width: 36px; cursor: pointer; font-size: 14px; flex-shrink: 0;
-}
-.escandallo-input-row button:disabled { opacity: .5; cursor: default; }
-
-@media (max-width: 480px) {
-  .escandallo-panel { width: 100vw; height: 100vh; bottom: 0; right: 0; border-radius: 0; }
-}
-
 /* ── Progress bars ────────────────────────────────────── */
 .bvs-row {
   display: flex;
@@ -1570,7 +1512,23 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
           <select id="doc-filtro-centro" onchange="docSetCentro(this.value)" style="height:28px;padding:0 6px;border:1px solid #ddd;border-radius:4px;font-size:12px">
             <option value="">Todos los centros</option>
           </select>
+          <button class="btn-sm" onclick="docGestToggle()" title="Crear, renombrar, reordenar o eliminar departamentos y subcategorías">⚙ Gestionar carpetas</button>
           <button class="btn-sm" onclick="docAbrirModalSubida()" style="margin-left:auto;background:var(--green);color:#fff;font-weight:500">＋ Subir documento</button>
+        </div>
+        <div id="doc-gestion" style="display:none;margin-top:14px;padding:14px;background:#f6f7f9;border:1px solid #e2e4e8;border-radius:8px">
+          <div class="g2" style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+            <div>
+              <div style="font-weight:500;font-size:12px;margin-bottom:8px">Departamentos</div>
+              <div id="doc-gest-deps"></div>
+              <button class="btn-sm" style="margin-top:8px" onclick="docDeptAdd()">+ Nuevo departamento</button>
+            </div>
+            <div>
+              <div style="font-weight:500;font-size:12px;margin-bottom:8px">Subcategorías de <span id="doc-gest-dep-nombre" style="color:var(--green)"></span></div>
+              <div id="doc-gest-subs"></div>
+              <button class="btn-sm" style="margin-top:8px" onclick="docSubAdd()">+ Nueva subcategoría</button>
+            </div>
+          </div>
+          <div style="font-size:11px;color:#888;margin-top:10px">Las carpetas con documentos no se pueden eliminar: mueve o elimina antes sus documentos.</div>
         </div>
         <div id="doc-dept-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px"></div>
         <div id="doc-subcat-pills" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>
@@ -1658,26 +1616,6 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
       <button class="btn" onclick="closeM('m-ppto')">Cancelar</button>
       <button class="btn btn-g" onclick="savePpto()">Guardar</button>
     </div>
-  </div>
-</div>
-
-<!-- ══════════════ ESCANDALLO — Copilot de datos ══════════════ -->
-<button id="escandallo-btn" onclick="toggleEscandallo()" title="Catalina — pregúntame sobre tus datos">💬</button>
-
-<div id="escandallo-panel" class="escandallo-panel">
-  <div class="escandallo-header">
-    <div>
-      <div class="escandallo-title">Catalina</div>
-      <div class="escandallo-subtitle">Pregúntame sobre tus datos</div>
-    </div>
-    <button class="escandallo-close" onclick="toggleEscandallo()">✕</button>
-  </div>
-  <div id="escandallo-messages" class="escandallo-messages">
-    <div class="escandallo-msg-bot">Hola, soy Catalina. Puedo analizar ingresos, compras, personal, presupuesto, ventas de un producto concreto y horas por departamento, en uno o todos los centros. Prueba algo como «¿qué centro vende más Binifadet Blanco?» o «qué departamento va peor en horas».</div>
-  </div>
-  <div class="escandallo-input-row">
-    <input id="escandallo-input" type="text" placeholder="Escribe tu pregunta…" onkeydown="if(event.key==='Enter')enviarEscandallo()">
-    <button id="escandallo-send" onclick="enviarEscandallo()">➤</button>
   </div>
 </div>
 
@@ -8968,389 +8906,6 @@ function renderComensales() {
   </tr>`;
 }
 
-/* ══════════════════ ESCANDALLO — Copilot de datos ══════════════════
-   Asistente conversacional sobre los datos ya cargados en DB.
-   Usa "tool use" de la API de Claude: el modelo pide datos concretos,
-   este código los calcula localmente (sin exponer DB entera) y se los
-   devuelve, para que la respuesta final esté basada en cifras reales.
-   La llamada real a Anthropic pasa por /api/escandallo (servidor);
-   la API key nunca viaja al navegador. */
-
-const ESC_APP_TOKEN = 'Tz7eDiGWWA4Q9egYcz_kYsrF_cvpABeK'; // debe coincidir EXACTO con ESCANDALLO_APP_TOKEN en Vercel. NO es la API key de Anthropic — esa vive solo en el servidor.
-let escandalloHistory = [];
-let escandalloEnCurso = false;
-
-function toggleEscandallo() {
-  const p = document.getElementById('escandallo-panel');
-  p.classList.toggle('open');
-  if (p.classList.contains('open')) document.getElementById('escandallo-input').focus();
-}
-
-function escAddMsg(role, texto) {
-  const box = document.getElementById('escandallo-messages');
-  const div = document.createElement('div');
-  div.className = role === 'user' ? 'escandallo-msg-user' : 'escandallo-msg-bot';
-  div.textContent = texto;
-  box.appendChild(div);
-  box.scrollTop = box.scrollHeight;
-  return div;
-}
-
-/* ── Herramientas: se ejecutan en local sobre DB, ya cargado en memoria ── */
-
-function escFiltroFecha(r, anio, mes) {
-  const okAnio = r.anio ? r.anio === anio : String(r.fecha || '').slice(0, 4) === String(anio);
-  if (!okAnio) return false;
-  if (mes && mes > 0) {
-    const m = r.mes != null ? r.mes : parseInt(String(r.fecha || '').slice(5, 7), 10);
-    if (m !== mes) return false;
-  }
-  return true;
-}
-
-function escToolResumenCentro({ centro, anio, mes }) {
-  const CT = (centro || '').toUpperCase().trim();
-  const ing = (DB.ingresos || []).filter(r => (r.centro || '').toUpperCase() === CT && escFiltroFecha(r, anio, mes));
-  const gas = (DB.gastos   || []).filter(r => (r.centro || '').toUpperCase() === CT && escFiltroFecha(r, anio, mes));
-  const nom = nominasEfectivas().filter(r => (r.canal || '').toUpperCase() === CT && r.anio === anio && (!mes || mes === 0 || r.mes === mes));
-
-  const totalIngresos = ing.reduce((s, r) => s + (r.base || 0), 0);
-  const totalCompras  = gas.reduce((s, r) => s + (r.base || r.importe || 0), 0);
-  const totalPersonal = nom.reduce((s, r) => s + (r.coste_total || 0), 0);
-
-  return {
-    centro: CT,
-    periodo: mes && mes > 0 ? `${mes}/${anio}` : `año ${anio} completo`,
-    ingresos_eur: Math.round(totalIngresos * 100) / 100,
-    compras_eur: Math.round(totalCompras * 100) / 100,
-    coste_personal_eur: Math.round(totalPersonal * 100) / 100,
-    ratio_compras_sobre_ingresos: totalIngresos > 0 ? Math.round((totalCompras / totalIngresos) * 1000) / 1000 : null,
-    ratio_personal_sobre_ingresos: totalIngresos > 0 ? Math.round((totalPersonal / totalIngresos) * 1000) / 1000 : null,
-    filas_ingresos_encontradas: ing.length
-  };
-}
-
-function escToolRankingProductos({ centro, anio, mes, orden, limite }) {
-  limite = Math.max(1, Math.min(limite || 10, 25));
-  const listaCentros = centro ? [centro.toUpperCase().trim()] : CENTROS;
-
-  const paraCentro = (ct) => {
-    const rows = (DB.ingresos || [])
-      .filter(r => (r.centro || '').toUpperCase() === ct && escFiltroFecha(r, anio, mes))
-      .map(resolveIng);
-
-    const porProducto = {};
-    rows.forEach(r => {
-      const nombre = (r.descripcion || '(sin nombre)').trim();
-      if (!porProducto[nombre]) porProducto[nombre] = { producto: nombre, familia: r.familia || '', unidades: 0, ingresos_eur: 0 };
-      porProducto[nombre].unidades += (r.unidades || 0);
-      porProducto[nombre].ingresos_eur += (r.base || 0);
-    });
-
-    let lista = Object.values(porProducto).filter(p => p.unidades > 0);
-    lista.sort((a, b) => orden === 'mas_vendidos' ? b.unidades - a.unidades : a.unidades - b.unidades);
-    return lista.slice(0, limite).map(p => ({ ...p, ingresos_eur: Math.round(p.ingresos_eur * 100) / 100 }));
-  };
-
-  return {
-    periodo: mes && mes > 0 ? `${mes}/${anio}` : `año ${anio} completo`,
-    orden,
-    aviso: 'Estos datos son solo unidades vendidas e ingresos. No incluyen margen ni coste de receta (todavía no hay escandallo de platos cargado), así que "poco valor" aquí es poca rotación/ingreso, no rentabilidad real.',
-    centros: listaCentros.map(ct => ({ centro: ct, productos: paraCentro(ct) }))
-  };
-}
-
-// Búsqueda flexible de ventas por nombre de producto/familia/subfamilia (coincidencia
-// parcial, sin distinguir mayúsculas). Agrega por centro. Para preguntas sobre UN producto
-// o familia concretos (p.ej. "botellas de Binifadet Blanco", "kg de mejillones").
-function escToolConsultarVentas({ busqueda, centro, anio, mes }) {
-  const q = (busqueda || '').toLowerCase().trim();
-  if (!q) return { error: 'Falta el término de búsqueda (parámetro busqueda).' };
-  const CT = centro ? centro.toUpperCase().trim() : null;
-
-  const rows = (DB.ingresos || [])
-    .filter(r => (!CT || (r.centro || '').toUpperCase() === CT) && escFiltroFecha(r, anio, mes))
-    .map(resolveIng)
-    .filter(r => {
-      const prod = (r.descripcion || '').toLowerCase();
-      const fam  = (r.familia || '').toLowerCase();
-      const sub  = (r.subfamilia || '').toLowerCase();
-      return prod.includes(q) || fam.includes(q) || sub.includes(q);
-    });
-
-  const periodo = mes && mes > 0 ? `${mes}/${anio}` : `año ${anio} completo`;
-  if (!rows.length) {
-    return { periodo, busqueda, encontrado: false, mensaje: 'No hay ventas que coincidan con esa búsqueda en ese periodo/centro. Prueba un término más corto o genérico antes de decir que no existe.' };
-  }
-
-  const porCentro = {};
-  const porProducto = {};
-  rows.forEach(r => {
-    const ct = (r.centro || '').toUpperCase();
-    if (!porCentro[ct]) porCentro[ct] = { centro: ct, unidades: 0, ingresos_eur: 0 };
-    porCentro[ct].unidades += (r.unidades || 0);
-    porCentro[ct].ingresos_eur += (r.base || 0);
-
-    const nombre = (r.descripcion || '(sin nombre)').trim();
-    if (!porProducto[nombre]) porProducto[nombre] = { producto: nombre, unidades: 0, ingresos_eur: 0 };
-    porProducto[nombre].unidades += (r.unidades || 0);
-    porProducto[nombre].ingresos_eur += (r.base || 0);
-  });
-  const desglosePorCentro = Object.values(porCentro)
-    .sort((a, b) => b.unidades - a.unidades)
-    .map(c => ({ ...c, ingresos_eur: Math.round(c.ingresos_eur * 100) / 100, unidades: Math.round(c.unidades * 100) / 100 }));
-  const desglosePorProducto = Object.values(porProducto)
-    .sort((a, b) => b.unidades - a.unidades)
-    .map(p => ({ ...p, ingresos_eur: Math.round(p.ingresos_eur * 100) / 100, unidades: Math.round(p.unidades * 100) / 100 }));
-
-  return {
-    periodo,
-    busqueda,
-    encontrado: true,
-    aviso_formatos: 'La búsqueda encuentra cualquier artículo cuyo nombre contenga el término, y eso puede incluir formatos distintos del mismo producto (botella, copa, media copa...) — usa desglose_por_producto para separarlos si la pregunta pide un formato concreto (p.ej. "botellas" vs "copas").',
-    aviso_unidad: '"unidades" es como quedó registrada la venta en Ágora para ese producto (puede ser botellas, raciones, kg u otra unidad distinta según cómo esté dado de alta) — no asumas un tipo de unidad fijo, coméntaselo al usuario si no está claro.',
-    total_unidades: Math.round(rows.reduce((s, r) => s + (r.unidades || 0), 0) * 100) / 100,
-    total_ingresos_eur: Math.round(rows.reduce((s, r) => s + (r.base || 0), 0) * 100) / 100,
-    desglose_por_centro: desglosePorCentro,
-    desglose_por_producto: desglosePorProducto
-  };
-}
-
-// Compara horas reales vs teóricas/contratadas por departamento, reutilizando el mismo
-// motor que ya usa la pestaña de RRHH (rrhhEnriquecido) — así coincide siempre con lo
-// que se ve ahí. Si no se pasa centro, agrega los 8 centros juntos por departamento.
-function escToolCompararHorasDepartamento({ centro, anio, mes }) {
-  const CT = centro ? centro.toUpperCase().trim() : null;
-  const rows = rrhhEnriquecido().filter(r => (!CT || (r.centro || '').toUpperCase() === CT) && escFiltroFecha(r, anio, mes));
-
-  const porDepto = {};
-  rows.forEach(r => {
-    const d = r.depto || 'OTROS';
-    if (!porDepto[d]) porDepto[d] = { departamento: d, horas_reales: 0, horas_teoricas: 0 };
-    porDepto[d].horas_reales += (r.real || 0);
-    porDepto[d].horas_teoricas += (r.teorico || 0);
-  });
-
-  const departamentos = Object.values(porDepto)
-    .map(d => ({
-      departamento: d.departamento,
-      horas_reales: Math.round(d.horas_reales * 10) / 10,
-      horas_teoricas: Math.round(d.horas_teoricas * 10) / 10,
-      desviacion_pct: d.horas_teoricas > 0 ? Math.round(((d.horas_reales - d.horas_teoricas) / d.horas_teoricas) * 1000) / 10 : null
-    }))
-    .sort((a, b) => (b.desviacion_pct || 0) - (a.desviacion_pct || 0));
-
-  return {
-    periodo: mes && mes > 0 ? `${mes}/${anio}` : `año ${anio} completo`,
-    centro: CT || 'todos los centros juntos',
-    guia_lectura: 'desviacion_pct positivo = más horas reales que teóricas/contratadas (posible sobrecarga o exceso); negativo = menos horas reales que teóricas (puede ser eficiencia o falta de cobertura). El signo no dice por sí solo cuál es "mejor" — coméntalo con el usuario en vez de asumirlo.',
-    departamentos
-  };
-}
-
-// Compara real vs presupuesto: ingresos (tabla `presupuesto`) y coste de personal
-// (tabla `presupuesto_nominas`). Si no se pasa centro, devuelve los 8 centros —
-// pensado para preguntas tipo "qué centros cumplen presupuesto".
-function escToolResumenPresupuesto({ anio, mes, centro }) {
-  const listaCentros = centro ? [centro.toUpperCase().trim()] : CENTROS;
-
-  const filaCentro = (ct) => {
-    const ingReal = (DB.ingresos || [])
-      .filter(r => (r.centro || '').toUpperCase() === ct && escFiltroFecha(r, anio, mes))
-      .reduce((s, r) => s + (r.base || 0), 0);
-    const ingPpto = (DB.presupuesto || [])
-      .filter(r => (r.centro || '').toUpperCase() === ct && escFiltroFecha(r, anio, mes))
-      .reduce((s, r) => s + (r.importe || 0), 0);
-    const persReal = nominasEfectivas()
-      .filter(r => (r.canal || '').toUpperCase() === ct && r.anio === anio && (!mes || mes === 0 || r.mes === mes))
-      .reduce((s, r) => s + (r.coste_total || 0), 0);
-    // presupuesto_nominas no distingue año en esta app (se carga el del año en curso), se filtra solo por canal+mes
-    const persPpto = (DB.presupuesto_nominas || [])
-      .filter(r => (r.canal || '').toUpperCase() === ct && (!mes || mes === 0 || r.mes === mes))
-      .reduce((s, r) => s + (r.importe || 0), 0);
-
-    return {
-      centro: ct,
-      ingresos_real_eur: Math.round(ingReal * 100) / 100,
-      ingresos_presupuesto_eur: Math.round(ingPpto * 100) / 100,
-      cumplimiento_ingresos_pct: ingPpto > 0 ? Math.round((ingReal / ingPpto) * 1000) / 10 : null,
-      personal_real_eur: Math.round(persReal * 100) / 100,
-      personal_presupuesto_eur: Math.round(persPpto * 100) / 100,
-      desviacion_personal_pct: persPpto > 0 ? Math.round(((persReal - persPpto) / persPpto) * 1000) / 10 : null
-    };
-  };
-
-  return {
-    periodo: mes && mes > 0 ? `${mes}/${anio}` : `año ${anio} completo`,
-    guia_lectura: 'cumplimiento_ingresos_pct: 100 o más = llega o supera el objetivo de ingresos (bien); menos de 100 = no llega. desviacion_personal_pct: positivo = coste de personal MAYOR que lo presupuestado (mal, sobrecoste); negativo = por debajo (bien). null en cualquier campo significa que no hay presupuesto cargado para ese centro/periodo.',
-    centros: listaCentros.map(filaCentro)
-  };
-}
-
-const ESC_TOOLS = [
-  {
-    name: 'resumen_centro',
-    description: 'Resumen financiero de un centro para un periodo: ingresos, compras/gastos, coste de personal y los ratios compras/ingresos y personal/ingresos. Son cifras reales, sin comparar contra presupuesto — para eso usa resumen_presupuesto.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        centro: { type: 'string', enum: CENTROS },
-        anio:   { type: 'integer', description: 'Año, ej. 2026' },
-        mes:    { type: 'integer', description: '1-12. Usa 0 para el año completo.' }
-      },
-      required: ['centro', 'anio', 'mes']
-    }
-  },
-  {
-    name: 'ranking_productos',
-    description: 'Productos de uno o varios centros ordenados por unidades vendidas, con sus ingresos. Sirve para ver qué platos venden poco o mucho. Si se omite centro, devuelve el ranking de cada uno de los 8 centros por separado — ideal para "productos menos vendidos de cada centro". No calcula margen ni coste de receta.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        centro:  { type: 'string', enum: CENTROS, description: 'Opcional. Si se omite, devuelve el ranking de todos los centros.' },
-        anio:    { type: 'integer' },
-        mes:     { type: 'integer', description: '1-12, o 0 para el año completo' },
-        orden:   { type: 'string', enum: ['menos_vendidos', 'mas_vendidos'] },
-        limite:  { type: 'integer', description: 'Cuántos productos por centro, máx 25' }
-      },
-      required: ['anio', 'mes', 'orden']
-    }
-  },
-  {
-    name: 'consultar_ventas',
-    description: 'Busca ventas de un producto, familia o subfamilia por nombre (coincidencia parcial, p.ej. "Binifadet Blanco" o "mejillones") y las agrega por centro. Úsala para cualquier pregunta sobre un producto o categoría concretos: cuánto se ha vendido, en qué centro más, etc. No calcula margen.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        busqueda: { type: 'string', description: 'Término a buscar en nombre de producto, familia o subfamilia' },
-        centro:   { type: 'string', enum: CENTROS, description: 'Opcional. Si se omite, agrega y desglosa por todos los centros.' },
-        anio:     { type: 'integer' },
-        mes:      { type: 'integer', description: '1-12, o 0 para el año completo / hasta hoy' }
-      },
-      required: ['busqueda', 'anio', 'mes']
-    }
-  },
-  {
-    name: 'comparar_horas_departamento',
-    description: 'Compara horas reales trabajadas contra horas teóricas/contratadas, agrupado por departamento (Cocina, Sala, etc.). Úsala para preguntas sobre qué departamento va mejor o peor en horas, sobrecarga o falta de cobertura. Si se omite centro, agrega todos los centros.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        centro: { type: 'string', enum: CENTROS, description: 'Opcional. Si se omite, agrega todos los centros.' },
-        anio:   { type: 'integer' },
-        mes:    { type: 'integer', description: '1-12, o 0 para el año completo' }
-      },
-      required: ['anio', 'mes']
-    }
-  },
-  {
-    name: 'resumen_presupuesto',
-    description: 'Compara cifras REALES contra el PRESUPUESTO cargado (ingresos objetivo y coste de personal objetivo) por centro y periodo. Úsala para cualquier pregunta sobre cumplimiento de presupuesto, objetivos o desviaciones. Si no se indica centro, devuelve los 8 centros a la vez — ideal para "qué centros cumplen y cuáles no".',
-    input_schema: {
-      type: 'object',
-      properties: {
-        centro: { type: 'string', enum: CENTROS, description: 'Opcional. Si se omite, devuelve todos los centros.' },
-        anio:   { type: 'integer', description: 'Año, ej. 2026' },
-        mes:    { type: 'integer', description: '1-12. Usa 0 para el año completo / acumulado.' }
-      },
-      required: ['anio', 'mes']
-    }
-  }
-];
-
-function escEjecutarTool(nombre, input) {
-  try {
-    if (nombre === 'resumen_centro')               return escToolResumenCentro(input);
-    if (nombre === 'ranking_productos')             return escToolRankingProductos(input);
-    if (nombre === 'consultar_ventas')              return escToolConsultarVentas(input);
-    if (nombre === 'comparar_horas_departamento')   return escToolCompararHorasDepartamento(input);
-    if (nombre === 'resumen_presupuesto')           return escToolResumenPresupuesto(input);
-    return { error: 'herramienta desconocida: ' + nombre };
-  } catch (e) {
-    return { error: String((e && e.message) || e) };
-  }
-}
-
-async function escLlamarClaude(messages) {
-  const hoy = new Date().toISOString().slice(0, 10);
-  const system = `Eres Catalina, el asistente de datos de Ratios Food Cost (Bonita Menorca). Respondes en español, corto y directo, con euros formateados tipo "1.234,56 €" y sin tablas markdown (texto plano, este chat no renderiza markdown). Hoy es ${hoy}. Centros disponibles: ${CENTROS.join(', ')}. Usa las herramientas para cualquier cifra concreta — nunca inventes números ni asumas que no tienes un dato sin haber probado la herramienta relevante primero. Si el usuario no da mes, usa el mes actual (según la fecha de hoy) y dilo explícitamente. Para preguntas sobre un producto, familia o subfamilia concretos (p.ej. una marca de vino, un ingrediente), usa consultar_ventas. Para "platos que no aportan valor" o rankings, usa ranking_productos (sin centro si preguntan por varios o todos) y traslada su aviso: es popularidad/ingresos, no rentabilidad real, porque no hay coste de receta cargado todavía. Para cumplimiento de presupuesto u objetivos, usa resumen_presupuesto (sin centro si preguntan por varios o todos). Para comparar departamentos en horas, usa comparar_horas_departamento. Cuando una pregunta pida comparar varios o todos los centros o departamentos a la vez, omite el parámetro centro en vez de llamar la herramienta una vez por centro.`;
-
-  const res = await fetch('/api/escandallo', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-app-token': ESC_APP_TOKEN
-    },
-    body: JSON.stringify({ max_tokens: 1200, system, tools: ESC_TOOLS, messages })
-  });
-  if (!res.ok) {
-    const detalle = await res.json().catch(() => ({}));
-    throw new Error('HTTP ' + res.status + ' — ' + ((detalle.error && detalle.error.message) || detalle.error || 'error desconocido'));
-  }
-  return res.json();
-}
-
-async function enviarEscandallo() {
-  if (escandalloEnCurso) return;
-  const input = document.getElementById('escandallo-input');
-  const texto = input.value.trim();
-  if (!texto) return;
-
-  if (!ESC_APP_TOKEN || ESC_APP_TOKEN.indexOf('TU_') === 0) {
-    escAddMsg('bot', 'Falta configurar el acceso: pon un valor en ESC_APP_TOKEN (en este archivo) y crea ANTHROPIC_API_KEY + ESCANDALLO_APP_TOKEN en Vercel.');
-    return;
-  }
-
-  input.value = '';
-  escAddMsg('user', texto);
-  escandalloHistory.push({ role: 'user', content: texto });
-
-  escandalloEnCurso = true;
-  document.getElementById('escandallo-send').disabled = true;
-  const pensando = escAddMsg('bot', 'Mirando datos…');
-  pensando.classList.add('escandallo-msg-thinking');
-
-  try {
-    let messages = escandalloHistory.slice();
-    let data = await escLlamarClaude(messages);
-    let vueltas = 0;
-    let agotado = false;
-
-    while (data.stop_reason === 'tool_use') {
-      if (vueltas >= 6) { agotado = true; break; }
-      vueltas++;
-      messages.push({ role: 'assistant', content: data.content });
-      const resultados = data.content
-        .filter(b => b.type === 'tool_use')
-        .map(b => ({ type: 'tool_result', tool_use_id: b.id, content: JSON.stringify(escEjecutarTool(b.name, b.input)) }));
-      messages.push({ role: 'user', content: resultados });
-      data = await escLlamarClaude(messages);
-    }
-
-    if (agotado) {
-      // No se añade nada a escandalloHistory: data.content trae tool_use sin su
-      // tool_result todavía, y guardarlo dejaría la conversación inválida para la
-      // API en el siguiente mensaje. Se descarta este intento entero.
-      pensando.remove();
-      escAddMsg('bot', 'Esta pregunta necesitaba más pasos de los que tengo permitidos ahora mismo. Prueba a dividirla en partes más concretas (un centro, un producto o un periodo cada vez).');
-      return;
-    }
-
-    const textoFinal = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim() || '(sin respuesta)';
-    pensando.remove();
-    escAddMsg('bot', textoFinal);
-    escandalloHistory.push({ role: 'assistant', content: data.content });
-    if (escandalloHistory.length > 16) escandalloHistory = escandalloHistory.slice(-16);
-  } catch (e) {
-    pensando.remove();
-    escAddMsg('bot', 'No he podido consultarlo: ' + ((e && e.message) || e));
-  } finally {
-    escandalloEnCurso = false;
-    document.getElementById('escandallo-send').disabled = false;
-  }
-}
-
-
 // ══════════════ DOCUMENTOS ══════════════
 // Repositorio de documentos por departamento/subcategoría (ex app documentos-bonita).
 // Tablas: doc_departamentos, doc_subcategorias, doc_documentos. Bucket Storage: 'documentos' (público, 25MB/archivo).
@@ -9538,6 +9093,121 @@ async function docBorrar(id){
     console.error(e);
     alert('Error al eliminar: ' + (e.message || e));
   }
+}
+
+// ── Gestión de carpetas (departamentos y subcategorías) ──
+// Réplica de la gestión de la antigua app documentos-bonita: crear, renombrar,
+// reordenar (intercambio de orden con el vecino) y eliminar. Regla de seguridad:
+// nada que contenga documentos se puede eliminar.
+function docGestToggle(){
+  const p = document.getElementById('doc-gestion');
+  const abrir = p.style.display === 'none';
+  p.style.display = abrir ? 'block' : 'none';
+  if (abrir) docGestRender();
+}
+function docGestRender(){
+  const deps = [...DB.doc_departamentos].sort((a,b)=>(a.orden||0)-(b.orden||0));
+  const fila = (nombre, botones) => `<div style="display:flex;align-items:center;gap:6px;padding:4px 6px;background:#fff;border:1px solid #e2e4e8;border-radius:6px;margin-bottom:4px"><span style="flex:1;font-size:12px">${docEsc(nombre)}</span>${botones}</div>`;
+  const mini = (icono, fn, title) => `<button class="btn-sm" style="padding:2px 7px" onclick="${fn}" title="${title}">${icono}</button>`;
+  document.getElementById('doc-gest-deps').innerHTML = deps.map((d,i) =>
+    fila((d.id===DOC_STATE.dept?'▸ ':'')+d.nombre,
+      mini('↑', `docDeptMove(${d.id},-1)`, 'Subir') + mini('↓', `docDeptMove(${d.id},1)`, 'Bajar') +
+      mini('✎', `docDeptRen(${d.id})`, 'Renombrar') + mini('🗑', `docDeptDel(${d.id})`, 'Eliminar') +
+      mini('▸', `docSetDept(${d.id});docGestRender()`, 'Ver sus subcategorías'))
+  ).join('') || '<div style="font-size:12px;color:#888">Sin departamentos.</div>';
+  const dep = deps.find(d=>d.id===DOC_STATE.dept);
+  document.getElementById('doc-gest-dep-nombre').textContent = dep ? dep.nombre : '—';
+  const subs = DB.doc_subcategorias.filter(s=>s.departamento_id===DOC_STATE.dept).sort((a,b)=>(a.orden||0)-(b.orden||0));
+  document.getElementById('doc-gest-subs').innerHTML = subs.map(s =>
+    fila(s.nombre,
+      mini('↑', `docSubMove(${s.id},-1)`, 'Subir') + mini('↓', `docSubMove(${s.id},1)`, 'Bajar') +
+      mini('✎', `docSubRen(${s.id})`, 'Renombrar') + mini('🗑', `docSubDel(${s.id})`, 'Eliminar'))
+  ).join('') || '<div style="font-size:12px;color:#888">Este departamento no tiene subcategorías.</div>';
+}
+async function docGestRecargarEstructura(){
+  try {
+    const [deps, subs] = await Promise.all([
+      sbFetch('doc_departamentos?select=*&order=orden.asc'),
+      sbFetch('doc_subcategorias?select=*&order=orden.asc')
+    ]);
+    DB.doc_departamentos = deps || [];
+    DB.doc_subcategorias = subs || [];
+  } catch(e){ alert('Error recargando estructura: ' + (e.message||e)); }
+  docGestRender();
+  renderDocumentos();
+}
+// — Departamentos —
+async function docDeptAdd(){
+  const nombre = (prompt('Nombre del nuevo departamento:')||'').trim();
+  if (!nombre) return;
+  if (DB.doc_departamentos.some(d=>d.nombre.toLowerCase()===nombre.toLowerCase())) { alert('Ya existe un departamento con ese nombre.'); return; }
+  const orden = Math.max(0, ...DB.doc_departamentos.map(d=>d.orden||0)) + 1;
+  try { await sbFetch('doc_departamentos', {method:'POST', body: JSON.stringify({nombre, orden})}); await docGestRecargarEstructura(); }
+  catch(e){ alert('Error: ' + (e.message||e)); }
+}
+async function docDeptRen(id){
+  const d = DB.doc_departamentos.find(x=>x.id===id); if (!d) return;
+  const nombre = (prompt('Nuevo nombre del departamento:', d.nombre)||'').trim();
+  if (!nombre || nombre===d.nombre) return;
+  try { await sbFetch('doc_departamentos?id=eq.'+id, {method:'PATCH', body: JSON.stringify({nombre})}); await docGestRecargarEstructura(); }
+  catch(e){ alert('Error: ' + (e.message||e)); }
+}
+async function docDeptDel(id){
+  const d = DB.doc_departamentos.find(x=>x.id===id); if (!d) return;
+  if (DB.doc_documentos.some(x=>x.departamento_id===id)) { alert('"'+d.nombre+'" contiene documentos. Muévelos o elimínalos antes.'); return; }
+  const nSubs = DB.doc_subcategorias.filter(s=>s.departamento_id===id).length;
+  if (!confirm('¿Eliminar el departamento "'+d.nombre+'"'+(nSubs?' y sus '+nSubs+' subcategorías':'')+'?')) return;
+  try { await sbFetch('doc_departamentos?id=eq.'+id, {method:'DELETE'}); await docGestRecargarEstructura(); }
+  catch(e){ alert('Error: ' + (e.message||e)); }
+}
+async function docDeptMove(id, dir){
+  const deps = [...DB.doc_departamentos].sort((a,b)=>(a.orden||0)-(b.orden||0));
+  const i = deps.findIndex(d=>d.id===id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= deps.length) return;
+  const a = deps[i], b = deps[j];
+  try {
+    await sbFetch('doc_departamentos?id=eq.'+a.id, {method:'PATCH', body: JSON.stringify({orden: b.orden})});
+    await sbFetch('doc_departamentos?id=eq.'+b.id, {method:'PATCH', body: JSON.stringify({orden: a.orden})});
+    await docGestRecargarEstructura();
+  } catch(e){ alert('Error: ' + (e.message||e)); }
+}
+// — Subcategorías —
+async function docSubAdd(){
+  if (!DOC_STATE.dept) return;
+  const nombre = (prompt('Nombre de la nueva subcategoría:')||'').trim();
+  if (!nombre) return;
+  const hermanas = DB.doc_subcategorias.filter(s=>s.departamento_id===DOC_STATE.dept);
+  if (hermanas.some(s=>s.nombre.toLowerCase()===nombre.toLowerCase())) { alert('Ya existe una subcategoría con ese nombre en este departamento.'); return; }
+  const orden = Math.max(0, ...hermanas.map(s=>s.orden||0)) + 1;
+  try { await sbFetch('doc_subcategorias', {method:'POST', body: JSON.stringify({departamento_id: DOC_STATE.dept, nombre, orden})}); await docGestRecargarEstructura(); }
+  catch(e){ alert('Error: ' + (e.message||e)); }
+}
+async function docSubRen(id){
+  const s = DB.doc_subcategorias.find(x=>x.id===id); if (!s) return;
+  const nombre = (prompt('Nuevo nombre de la subcategoría:', s.nombre)||'').trim();
+  if (!nombre || nombre===s.nombre) return;
+  try { await sbFetch('doc_subcategorias?id=eq.'+id, {method:'PATCH', body: JSON.stringify({nombre})}); await docGestRecargarEstructura(); }
+  catch(e){ alert('Error: ' + (e.message||e)); }
+}
+async function docSubDel(id){
+  const s = DB.doc_subcategorias.find(x=>x.id===id); if (!s) return;
+  if (DB.doc_documentos.some(x=>x.subcategoria_id===id)) { alert('"'+s.nombre+'" contiene documentos. Muévelos o elimínalos antes.'); return; }
+  if (!confirm('¿Eliminar la subcategoría "'+s.nombre+'"?')) return;
+  try { await sbFetch('doc_subcategorias?id=eq.'+id, {method:'DELETE'}); await docGestRecargarEstructura(); }
+  catch(e){ alert('Error: ' + (e.message||e)); }
+}
+async function docSubMove(id, dir){
+  const subs = DB.doc_subcategorias.filter(s=>s.departamento_id===DOC_STATE.dept).sort((a,b)=>(a.orden||0)-(b.orden||0));
+  const i = subs.findIndex(s=>s.id===id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= subs.length) return;
+  const a = subs[i], b = subs[j];
+  try {
+    await sbFetch('doc_subcategorias?id=eq.'+a.id, {method:'PATCH', body: JSON.stringify({orden: b.orden})});
+    await sbFetch('doc_subcategorias?id=eq.'+b.id, {method:'PATCH', body: JSON.stringify({orden: a.orden})});
+    await docGestRecargarEstructura();
+  } catch(e){ alert('Error: ' + (e.message||e)); }
 }
 
 </script>
