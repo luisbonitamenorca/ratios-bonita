@@ -583,6 +583,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
     <button class="tab-btn" onclick="showTab('clasif',this)">🏷️ Clasificación</button>
     <button class="tab-btn" onclick="showTab('inventarios',this)">📦 Inventarios</button>
     <button class="tab-btn" onclick="showTab('ecommerce',this)">🛍️ Ecommerce</button>
+    <button class="tab-btn" onclick="showTab('documentos',this)">📁 Documentos</button>
   </nav>
 
   <main class="content">
@@ -1519,10 +1520,46 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
       </div>
     </div>
 
+    <!-- ══════════════ DOCUMENTOS ══════════════ -->
+    <div id="tab-documentos" class="tab-pane">
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div class="card-t" style="margin:0">📁 Documentos</div>
+          <input type="text" id="doc-buscar" placeholder="Buscar documento..." oninput="docSetBusqueda(this.value)" style="height:28px;padding:0 10px;border:1px solid #ddd;border-radius:4px;font-size:12px;min-width:200px">
+          <select id="doc-filtro-centro" onchange="docSetCentro(this.value)" style="height:28px;padding:0 6px;border:1px solid #ddd;border-radius:4px;font-size:12px">
+            <option value="">Todos los centros</option>
+          </select>
+          <button class="btn-sm" onclick="docAbrirModalSubida()" style="margin-left:auto;background:var(--green);color:#fff;font-weight:500">＋ Subir documento</button>
+        </div>
+        <div id="doc-dept-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px"></div>
+        <div id="doc-subcat-pills" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>
+      </div>
+      <div id="doc-lista"></div>
+    </div>
+
   </main>
 </div>
 
 <!-- ══════════════ MODALES ══════════════ -->
+<div id="m-doc" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-title">Subir documento</div>
+    <div class="form-grid">
+      <div class="fg span2"><label>Nombre del documento</label><input type="text" id="doc-up-nombre" placeholder="p. ej. Guía de bienvenida 2026"></div>
+      <div class="fg span2"><label>Descripción (opcional)</label><input type="text" id="doc-up-desc"></div>
+      <div class="fg"><label>Departamento</label><select id="doc-up-dept" onchange="docPopulateSubcats()"></select></div>
+      <div class="fg"><label>Subcategoría</label><select id="doc-up-subcat"></select></div>
+      <div class="fg"><label>Centro (opcional)</label><select id="doc-up-centro"><option value="">— General —</option></select></div>
+      <div class="fg"><label>Archivo (máx. 25 MB)</label><input type="file" id="doc-up-file"></div>
+    </div>
+    <div id="doc-up-msg" style="font-size:12px;color:var(--red);margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeM('m-doc')">Cancelar</button>
+      <button class="btn btn-g" id="doc-up-submit" onclick="docSubirArchivo()">Subir</button>
+    </div>
+  </div>
+</div>
+
 <div id="m-ing" class="modal-overlay" style="display:none">
   <div class="modal-box">
     <div class="modal-title">Añadir ingreso</div>
@@ -1628,6 +1665,9 @@ const DB = {
   inventarios:         [],
   ecommerce:           [],
   ecommerce_historico: [],
+  doc_departamentos:   [],
+  doc_subcategorias:   [],
+  doc_documentos:      [],
 };
 
 </script>
@@ -2272,6 +2312,7 @@ function showTab(id, btn) {
     'control-prod':    () => { populateCpFamilias(); populateCpSubfamilias(); renderControlProd(); },
     'salarios':        () => { renderSalarios(); initRepartoNominas(); },
     'asiento':         renderAsiento,
+    'documentos':      renderDocumentos,
   };
   if (renders[id]) renders[id]();
 }
@@ -6043,6 +6084,9 @@ async function loadFromStorage() {
       'inventarios': 'fecha_cierre',
       'ecommerce': 'pedido_id',
       'ecommerce_historico': 'pedido_id',
+      'doc_departamentos': 'id',
+      'doc_subcategorias': 'id',
+      'doc_documentos': 'id',
     };
     async function loadAll(table) {
       const rows = [];
@@ -6065,7 +6109,7 @@ async function loadFromStorage() {
       console.warn(`[carga] Falló ${table}:`, e.message);
       return [];
     });
-    const [ingresos, gastos, presupuesto, rrhh, nominas, presupuesto_nominas, nominas_reparto, nominas_reparto_horas, visitas, comensales, ingresos_historico, productos_agora, productos_dijit, familias, subfamilias, ratios_objetivo, productos_controlados, inventarios, rrhh_excepciones, rrhh_puestos, ecommerce, ecommerce_historico] = await Promise.all([
+    const [ingresos, gastos, presupuesto, rrhh, nominas, presupuesto_nominas, nominas_reparto, nominas_reparto_horas, visitas, comensales, ingresos_historico, productos_agora, productos_dijit, familias, subfamilias, ratios_objetivo, productos_controlados, inventarios, rrhh_excepciones, rrhh_puestos, ecommerce, ecommerce_historico, doc_departamentos, doc_subcategorias, doc_documentos] = await Promise.all([
       loadAll('ingresos'),
       loadAll('gastos'),
       loadAll('presupuesto'),
@@ -6088,6 +6132,9 @@ async function loadFromStorage() {
       safeLoad('rrhh_puestos'),
       safeLoad('ecommerce'),
       safeLoad('ecommerce_historico'),
+      safeLoad('doc_departamentos'),
+      safeLoad('doc_subcategorias'),
+      safeLoad('doc_documentos'),
     ]);
     DB.ingresos             = ingresos             || [];
     DB.gastos               = gastos               || [];
@@ -6111,6 +6158,9 @@ async function loadFromStorage() {
     DB.inventarios          = inventarios          || [];
     DB.ecommerce            = ecommerce            || [];
     DB.ecommerce_historico  = ecommerce_historico  || [];
+    DB.doc_departamentos    = doc_departamentos    || [];
+    DB.doc_subcategorias    = doc_subcategorias    || [];
+    DB.doc_documentos       = doc_documentos       || [];
     aplicarAjustesIngresos();   // reubicación externa de ventas (no toca ficheros ni Supabase)
     invalidateStockCache();
     // Construir índices para resolución dinámica de familia/subfamilia
@@ -9250,6 +9300,195 @@ async function enviarEscandallo() {
   }
 }
 
+
+// ══════════════ DOCUMENTOS ══════════════
+// Repositorio de documentos por departamento/subcategoría (ex app documentos-bonita).
+// Tablas: doc_departamentos, doc_subcategorias, doc_documentos. Bucket Storage: 'documentos' (público, 25MB/archivo).
+const DOC_CENTROS = ['Bodega','Binifadet','Tamarindos','Tamarindos Bar','Casa Tirant','Tienda','Estructura'];
+const DOC_MAX_MB = 25;
+const DOC_STATE = { dept: null, subcat: 'all', centro: '', q: '' };
+
+function docEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function docFmtSize(b){ b=Number(b)||0; if(!b) return ''; if(b<1024) return b+' B'; if(b<1048576) return Math.round(b/1024)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
+function docFmtFecha(iso){ if(!iso) return ''; const d=new Date(iso); return isNaN(d)?'':d.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'}); }
+function docIcono(tipo){ const t=(tipo||'').toLowerCase();
+  if(t==='pdf') return '📄';
+  if(['jpg','jpeg','png','gif','webp','svg'].includes(t)) return '🖼️';
+  if(['xls','xlsx','csv'].includes(t)) return '📊';
+  if(['doc','docx'].includes(t)) return '📝';
+  if(['ppt','pptx'].includes(t)) return '📽️';
+  if(['zip','rar','7z'].includes(t)) return '🗜️';
+  return '📎';
+}
+function docSlug(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9._-]+/g,'-').replace(/^-+|-+$/g,'') || 'doc'; }
+
+function docSetDept(id){ DOC_STATE.dept = id; DOC_STATE.subcat = 'all'; renderDocumentos(); }
+function docSetSubcat(id){ DOC_STATE.subcat = id; docRenderLista(); }
+function docSetCentro(v){ DOC_STATE.centro = v; docRenderLista(); }
+function docSetBusqueda(v){ DOC_STATE.q = (v||'').trim().toLowerCase(); renderDocumentos(); }
+
+function renderDocumentos(){
+  const deps = [...DB.doc_departamentos].sort((a,b)=>(a.orden||0)-(b.orden||0));
+  if (DOC_STATE.dept === null || !deps.find(d=>d.id===DOC_STATE.dept)) {
+    DOC_STATE.dept = deps.length ? deps[0].id : null;
+    DOC_STATE.subcat = 'all';
+  }
+  // Filtro de centros: poblar una sola vez
+  const selC = document.getElementById('doc-filtro-centro');
+  if (selC && selC.options.length <= 1) {
+    DOC_CENTROS.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; selC.appendChild(o); });
+  }
+  const buscando = DOC_STATE.q !== '';
+  // Pestañas de departamento (atenuadas durante una búsqueda global)
+  document.getElementById('doc-dept-tabs').innerHTML = deps.map(d =>
+    `<button class="btn-sm" style="${!buscando && d.id===DOC_STATE.dept ? 'background:var(--green);color:#fff;font-weight:500' : ''};${buscando?'opacity:.45':''}" onclick="document.getElementById('doc-buscar').value='';DOC_STATE.q='';docSetDept(${d.id})">${docEsc(d.nombre)}</button>`
+  ).join('');
+  // Píldoras de subcategoría del departamento activo
+  const subs = DB.doc_subcategorias.filter(s=>s.departamento_id===DOC_STATE.dept).sort((a,b)=>(a.orden||0)-(b.orden||0));
+  document.getElementById('doc-subcat-pills').innerHTML = (buscando || subs.length===0) ? '' :
+    [`<button class="btn-sm" style="${DOC_STATE.subcat==='all'?'background:#1a1a1a;color:#fff':''}" onclick="docSetSubcat('all')">Todas</button>`]
+    .concat(subs.map(s=>`<button class="btn-sm" style="${DOC_STATE.subcat===s.id?'background:#1a1a1a;color:#fff':''}" onclick="docSetSubcat(${s.id})">${docEsc(s.nombre)}</button>`))
+    .join('');
+  docRenderLista();
+}
+
+function docRenderLista(){
+  const cont = document.getElementById('doc-lista');
+  const buscando = DOC_STATE.q !== '';
+  let docs = [...DB.doc_documentos];
+  if (buscando) {
+    docs = docs.filter(d => (d.nombre+' '+(d.descripcion||'')+' '+(d.archivo_nombre||'')).toLowerCase().includes(DOC_STATE.q));
+  } else {
+    docs = docs.filter(d => d.departamento_id === DOC_STATE.dept);
+    if (DOC_STATE.subcat !== 'all') docs = docs.filter(d => d.subcategoria_id === DOC_STATE.subcat);
+  }
+  // El filtro de centro muestra los del centro elegido + los generales (sin centro)
+  if (DOC_STATE.centro) docs = docs.filter(d => !d.centro || d.centro === DOC_STATE.centro);
+  docs.sort((a,b)=>(b.actualizado_en||'').localeCompare(a.actualizado_en||''));
+
+  if (docs.length === 0) {
+    cont.innerHTML = `<div class="card" style="text-align:center;color:#888;padding:32px">${buscando ? 'Ningún documento coincide con la búsqueda.' : 'No hay documentos en esta carpeta todavía. Usa "＋ Subir documento" para añadir el primero.'}</div>`;
+    return;
+  }
+  const depById = Object.fromEntries(DB.doc_departamentos.map(d=>[d.id,d.nombre]));
+  const subById = Object.fromEntries(DB.doc_subcategorias.map(s=>[s.id,s.nombre]));
+  cont.innerHTML = `<div class="card"><div class="tbl-wrap"><table>
+    <thead><tr><th></th><th>Documento</th><th>Ubicación</th><th>Centro</th><th class="tr">Tamaño</th><th class="tr">Fecha</th><th class="tr">Acciones</th></tr></thead>
+    <tbody>` + docs.map(d => {
+      const ubic = buscando
+        ? docEsc((depById[d.departamento_id]||'') + (subById[d.subcategoria_id] ? ' · ' + subById[d.subcategoria_id] : ''))
+        : docEsc(subById[d.subcategoria_id] || '—');
+      const urlDescarga = d.archivo_url + '?download=' + encodeURIComponent(d.archivo_nombre || 'documento');
+      return `<tr>
+        <td style="font-size:18px">${docIcono(d.archivo_tipo)}</td>
+        <td><div style="font-weight:500">${docEsc(d.nombre)}</div>${d.descripcion ? `<div style="font-size:11px;color:#888">${docEsc(d.descripcion)}</div>` : ''}</td>
+        <td style="font-size:11px;color:#666">${ubic}</td>
+        <td style="font-size:11px;color:#666">${docEsc(d.centro || 'General')}</td>
+        <td class="tr" style="font-size:11px;color:#888">${docFmtSize(d.archivo_tamano)}</td>
+        <td class="tr" style="font-size:11px;color:#888">${docFmtFecha(d.actualizado_en)}</td>
+        <td class="tr" style="white-space:nowrap">
+          <a class="btn-sm" href="${docEsc(d.archivo_url)}" target="_blank" rel="noopener" style="text-decoration:none">👁 Ver</a>
+          <a class="btn-sm" href="${docEsc(urlDescarga)}" style="text-decoration:none">⬇</a>
+          <button class="btn-sm" onclick="docBorrar(${d.id})" title="Eliminar documento" style="color:var(--red)">🗑</button>
+        </td>
+      </tr>`;
+    }).join('') + `</tbody></table></div></div>`;
+}
+
+// ── Subida ──
+function docAbrirModalSubida(){
+  const selD = document.getElementById('doc-up-dept');
+  selD.innerHTML = [...DB.doc_departamentos].sort((a,b)=>(a.orden||0)-(b.orden||0))
+    .map(d=>`<option value="${d.id}" ${d.id===DOC_STATE.dept?'selected':''}>${docEsc(d.nombre)}</option>`).join('');
+  const selC = document.getElementById('doc-up-centro');
+  selC.innerHTML = '<option value="">— General —</option>' + DOC_CENTROS.map(c=>`<option value="${docEsc(c)}">${docEsc(c)}</option>`).join('');
+  document.getElementById('doc-up-nombre').value = '';
+  document.getElementById('doc-up-desc').value = '';
+  document.getElementById('doc-up-file').value = '';
+  document.getElementById('doc-up-msg').textContent = '';
+  docPopulateSubcats();
+  openM('m-doc');
+}
+function docPopulateSubcats(){
+  const deptId = parseInt(document.getElementById('doc-up-dept').value);
+  const subs = DB.doc_subcategorias.filter(s=>s.departamento_id===deptId).sort((a,b)=>(a.orden||0)-(b.orden||0));
+  const sel = document.getElementById('doc-up-subcat');
+  sel.innerHTML = '<option value="">— Sin subcategoría —</option>' + subs.map(s=>`<option value="${s.id}" ${(DOC_STATE.subcat===s.id&&deptId===DOC_STATE.dept)?'selected':''}>${docEsc(s.nombre)}</option>`).join('');
+}
+async function docRecargar(){
+  try { DB.doc_documentos = (await sbFetch('doc_documentos?select=*&order=actualizado_en.desc')) || []; }
+  catch(e){ console.error('Error recargando documentos:', e); }
+  renderDocumentos();
+}
+async function docSubirArchivo(){
+  const nombre = document.getElementById('doc-up-nombre').value.trim();
+  const desc   = document.getElementById('doc-up-desc').value.trim();
+  const deptId = parseInt(document.getElementById('doc-up-dept').value);
+  const subVal = document.getElementById('doc-up-subcat').value;
+  const centro = document.getElementById('doc-up-centro').value;
+  const file   = document.getElementById('doc-up-file').files[0];
+  const msg    = document.getElementById('doc-up-msg');
+  msg.textContent = '';
+  if (!nombre) { msg.textContent = 'Introduce un nombre para el documento.'; return; }
+  if (!deptId) { msg.textContent = 'Selecciona un departamento.'; return; }
+  if (!file)   { msg.textContent = 'Selecciona un archivo.'; return; }
+  if (file.size > DOC_MAX_MB*1024*1024) { msg.textContent = `El archivo supera el máximo de ${DOC_MAX_MB} MB.`; return; }
+
+  const btn = document.getElementById('doc-up-submit');
+  btn.disabled = true; btn.textContent = 'Subiendo...';
+  try {
+    const dept = DB.doc_departamentos.find(d=>d.id===deptId);
+    const ext  = (file.name.includes('.') ? file.name.split('.').pop() : '').toLowerCase();
+    const path = docSlug(dept ? dept.nombre : 'general') + '/' + crypto.randomUUID() + '-' + docSlug(file.name);
+    // 1) Subir el archivo al bucket
+    const up = await fetch(SB_URL + '/storage/v1/object/documentos/' + path, {
+      method: 'POST',
+      headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': file.type || 'application/octet-stream' },
+      body: file
+    });
+    if (!up.ok) throw new Error('Storage: ' + (await up.text()).substring(0,120));
+    const publicUrl = SB_URL + '/storage/v1/object/public/documentos/' + path;
+    // 2) Registrar el documento en la tabla
+    await sbFetch('doc_documentos', { method:'POST', body: JSON.stringify({
+      nombre, descripcion: desc || null,
+      departamento_id: deptId,
+      subcategoria_id: subVal ? parseInt(subVal) : null,
+      centro: centro || null,
+      archivo_url: publicUrl, archivo_path: path,
+      archivo_nombre: file.name, archivo_tipo: ext, archivo_tamano: file.size
+    })});
+    closeM('m-doc');
+    await docRecargar();
+  } catch(e) {
+    console.error(e);
+    msg.textContent = 'Error al subir: ' + (e.message || e);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Subir';
+  }
+}
+
+// ── Borrado ──
+async function docBorrar(id){
+  const d = DB.doc_documentos.find(x=>x.id===id);
+  if (!d) return;
+  if (!confirm(`¿Eliminar "${d.nombre}"? Esta acción no se puede deshacer.`)) return;
+  try {
+    // 1) Borrar el archivo del bucket (si falla, avisamos pero seguimos: la fila es la referencia visible)
+    if (d.archivo_path) {
+      const del = await fetch(SB_URL + '/storage/v1/object/documentos/' + d.archivo_path, {
+        method: 'DELETE',
+        headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY }
+      });
+      if (!del.ok) console.warn('No se pudo borrar el archivo del bucket:', await del.text());
+    }
+    // 2) Borrar la fila
+    await sbFetch('doc_documentos?id=eq.' + id, { method: 'DELETE' });
+    await docRecargar();
+  } catch(e) {
+    console.error(e);
+    alert('Error al eliminar: ' + (e.message || e));
+  }
+}
 
 </script>
 </body>
