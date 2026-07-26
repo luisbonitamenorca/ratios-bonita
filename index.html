@@ -1655,7 +1655,7 @@ const DB = {
 <script>
 // app.js — Lógica principal · Ratios Food Cost · Bonita Menorca
 // Versión del build: visible en la barra lateral y en consola para diagnosticar cachés.
-const APP_VERSION = '2026-07-26.3';
+const APP_VERSION = '2026-07-26.4';
 console.log('Ratios Food Cost · build', APP_VERSION);
 document.addEventListener('DOMContentLoaded', () => {
   const v = document.getElementById('app-version');
@@ -6074,6 +6074,104 @@ async function importarHuerfanos(tipo) {
   }
 }
 
+// ── Caché local (IndexedDB) para tablas históricas inmutables ──────
+// El histórico solo cambia en cargas anuales manuales; re-descargarlo
+// entero (~34 MB, 11 peticiones en cadena) en cada carga es el mayor
+// coste de arranque. Mecanismo: al arrancar se pide a Supabase un
+// "sello" barato (recuento exacto + id y created_at de la fila más
+// nueva, 1 petición mínima). Si coincide con el sello guardado, la
+// tabla se sirve desde IndexedDB en décimas de segundo; si no
+// (carga anual, corrección), se re-descarga y se actualiza la caché.
+// Cualquier fallo del mecanismo degrada a la descarga completa de
+// siempre: la caché nunca puede bloquear la app ni servir datos viejos.
+const CACHE_DB = 'ratios-cache';
+const CACHE_STORE = 'tablas';
+const CACHE_V = 1;
+
+function cacheOpen() {
+  return new Promise((res, rej) => {
+    const req = indexedDB.open(CACHE_DB, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(CACHE_STORE, { keyPath: 'tabla' });
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => rej(req.error);
+  });
+}
+async function cacheGet(tabla) {
+  const db = await cacheOpen();
+  try {
+    return await new Promise((res, rej) => {
+      const rq = db.transaction(CACHE_STORE).objectStore(CACHE_STORE).get(tabla);
+      rq.onsuccess = () => res(rq.result || null);
+      rq.onerror = () => rej(rq.error);
+    });
+  } finally { db.close(); }
+}
+async function cachePut(rec) {
+  const db = await cacheOpen();
+  try {
+    await new Promise((res, rej) => {
+      const tx = db.transaction(CACHE_STORE, 'readwrite');
+      tx.objectStore(CACHE_STORE).put(rec);
+      tx.oncomplete = res;
+      tx.onerror = () => rej(tx.error);
+      tx.onabort = () => rej(tx.error || new Error('tx abortada'));
+    });
+  } finally { db.close(); }
+}
+
+// Sello de cambio de una tabla: nº exacto de filas + id y created_at de
+// la fila más nueva, todo en UNA petición mínima (Range 0-0 + count=exact).
+// created_at tiene DEFAULT now(): cualquier truncate+recarga lo altera
+// aunque el nº de filas y los ids coincidieran.
+async function sbStamp(table) {
+  const res = await fetch(`${SB_URL}/rest/v1/${table}?select=id,created_at&order=id.desc&limit=1`, {
+    cache: 'no-store',
+    headers: { ...sbHeaders, 'Prefer': 'count=exact', 'Range': '0-0', 'Range-Unit': 'items' }
+  });
+  if (!res.ok) throw new Error('sello HTTP ' + res.status);
+  const cr = res.headers.get('content-range') || '';
+  const n = parseInt(cr.split('/')[1], 10);
+  if (!Number.isFinite(n)) throw new Error('sello sin content-range');
+  const fila = (await res.json())[0] || {};
+  return { v: CACHE_V, n, maxId: fila.id ?? null, maxCreated: fila.created_at ?? null };
+}
+const mismoSello = (a, b) => !!a && !!b && a.v === b.v && a.n === b.n && a.maxId === b.maxId && a.maxCreated === b.maxCreated;
+
+// Carga de tabla con caché local. loadAllFn se recibe como parámetro
+// porque loadAll vive dentro de loadFromStorage.
+async function loadCached(table, loadAllFn) {
+  let sello = null;
+  try {
+    sello = await sbStamp(table);
+  } catch (e) {
+    console.warn(`[caché] ${table}: sin sello (${e.message}) — descarga completa`);
+    return loadAllFn(table);
+  }
+  try {
+    const rec = await cacheGet(table);
+    if (rec && mismoSello(rec.sello, sello) && Array.isArray(rec.filas)) {
+      console.log(`[caché] ${table}: sello válido — ${rec.filas.length} filas desde disco local`);
+      return rec.filas;
+    }
+  } catch (e) {
+    console.warn(`[caché] ${table}: lectura falló (${e.message}) — descarga completa`);
+  }
+  const filas = await loadAllFn(table);
+  try {
+    if (sello.n === filas.length) {
+      await cachePut({ tabla: table, sello, filas, guardado: new Date().toISOString() });
+      console.log(`[caché] ${table}: actualizada (${filas.length} filas)`);
+    } else {
+      // La tabla cambió entre el sello y la descarga (p. ej. carga en curso):
+      // no guardamos un sello inconsistente; la próxima carga revalida.
+      console.warn(`[caché] ${table}: recuento inconsistente (sello ${sello.n} vs descargadas ${filas.length}) — no se guarda`);
+    }
+  } catch (e) {
+    console.warn(`[caché] ${table}: escritura falló (${e.message})`);
+  }
+  return filas;
+}
+
 async function loadFromStorage() {
   setSyncStatus('Cargando datos...', '#BA7517');
   try {
@@ -6133,7 +6231,7 @@ async function loadFromStorage() {
       safeLoad('nominas_reparto_horas'),
       safeLoad('visitas'),
       safeLoad('comensales'),
-      loadAll('ingresos_historico'),
+      loadCached('ingresos_historico', loadAll),
       safeLoad('productos_agora'),
       safeLoad('productos_dijit'),
       safeLoad('familias'),
