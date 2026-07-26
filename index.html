@@ -1655,7 +1655,7 @@ const DB = {
 <script>
 // app.js — Lógica principal · Ratios Food Cost · Bonita Menorca
 // Versión del build: visible en la barra lateral y en consola para diagnosticar cachés.
-const APP_VERSION = '2026-07-26.2';
+const APP_VERSION = '2026-07-26.3';
 console.log('Ratios Food Cost · build', APP_VERSION);
 document.addEventListener('DOMContentLoaded', () => {
   const v = document.getElementById('app-version');
@@ -6093,8 +6093,15 @@ async function loadFromStorage() {
     };
     async function loadAll(table) {
       const rows = [];
-      const LIMIT = 1000;
+      // 10000 por página requiere "Max rows" >= 10000 en Supabase
+      // (Dashboard → Integrations → Data API → Settings → Max rows).
+      // Guarda anti-truncado: si el servidor sigue con el tope por defecto
+      // (1000), cada lote llega con exactamente 1000 filas; en ese caso NO
+      // damos la tabla por terminada y seguimos paginando como antes.
+      // Así el orden deploy/ajuste da igual y nunca se pierden datos en silencio.
+      const LIMIT = 10000;
       let from = 0;
+      let maxBatch = 0;
       const orderCol = PK_BY_TABLE[table] || 'id';
       while (true) {
         const to = from + LIMIT - 1;
@@ -6103,9 +6110,12 @@ async function loadFromStorage() {
         });
         if (!batch || batch.length === 0) break;
         rows.push(...batch);
-        if (batch.length < LIMIT) break;
-        from += LIMIT;
+        from += batch.length;
+        maxBatch = Math.max(maxBatch, batch.length);
+        if (batch.length < LIMIT && batch.length !== 1000) break;
       }
+      if (LIMIT > 1000 && rows.length > 1000 && maxBatch === 1000)
+        console.warn(`[carga] ${table}: el servidor sigue limitando a 1000 filas/petición — revisa "Max rows" en Supabase (Integrations → Data API → Settings)`);
       return rows;
     }
     const safeLoad = (table) => loadAll(table).catch(e => {
