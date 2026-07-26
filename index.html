@@ -1655,7 +1655,7 @@ const DB = {
 <script>
 // app.js — Lógica principal · Ratios Food Cost · Bonita Menorca
 // Versión del build: visible en la barra lateral y en consola para diagnosticar cachés.
-const APP_VERSION = '2026-07-18.1';
+const APP_VERSION = '2026-07-26.1';
 console.log('Ratios Food Cost · build', APP_VERSION);
 document.addEventListener('DOMContentLoaded', () => {
   const v = document.getElementById('app-version');
@@ -7357,16 +7357,45 @@ function renderVentas() {
         tooltip:{callbacks:{label:ctx=>`${ctx.label}: €${fmtK(ctx.parsed)}`}} } }
   });
 
-  // Gráfico evolución mensual
-  const mesMap = {};
-  rows.forEach(r=>{ mesMap[r.mes]=(mesMap[r.mes]||0)+r.base; });
-  const mkeys = Object.keys(mesMap).filter(k=>+k>0).sort((a,b)=>+a-+b);
+  // Gráfico evolución mensual — históricos (2024, 2025) junto al año activo
+  const RV_HIST = [
+    { año:'2024', color:'#c3c8ce' },
+    { año:'2025', color:'#8d99a6' }
+  ];
+  const rvSumaMes = arr => {
+    const m = {};
+    arr.forEach(r => { const k = +r.mes; if (k >= 1 && k <= 12) m[k] = (m[k]||0) + r.base; });
+    return m;
+  };
+  const mesMap = rvSumaMes(rows);
+  const rvMeses = [1,2,3,4,5,6,7,8,9,10,11,12];
+  // Los históricos respetan los filtros de centro y familia, pero ignoran el de año.
+  // Cada uno se omite si es el año activo (duplicaría la serie principal).
+  // Con año = "Todos" no se muestra ninguno: la serie principal ya los incluye.
+  const rvHistVis = año ? RV_HIST.filter(h => h.año !== año) : [];
+  const rvDatasets = rvHistVis.map(h => {
+    const hm = rvSumaMes(getIngAll().filter(r =>
+      (!c   || r.centro  === c) &&
+      (!fam || r.familia === fam) &&
+      r.fecha?.substring(0,4) === h.año
+    ));
+    return { label:h.año, data:rvMeses.map(k=>+(hm[k]||0).toFixed(0)), backgroundColor:h.color, borderRadius:3 };
+  });
+  rvDatasets.push({
+    label: año || 'Todo',
+    data: rvMeses.map(k=>+(mesMap[k]||0).toFixed(0)),
+    backgroundColor:'#1D9E75', borderRadius:3
+  });
+  // Orden cronológico de las barras dentro de cada mes: el año activo se añade
+  // al final del array, así que si es el más antiguo hay que reordenar.
+  rvDatasets.sort((a,b)=>a.label.localeCompare(b.label));
   destroyChart('rvMes');
   charts.rvMes = new Chart(document.getElementById('ch-rv-mes'), {
     type:'bar',
-    data:{ labels:mkeys.map(k=>MESES[+k]||k), datasets:[{ data:mkeys.map(k=>+mesMap[k].toFixed(0)), backgroundColor:'#1D9E75', borderRadius:3 }] },
+    data:{ labels:rvMeses.map(k=>MESES[k].substring(0,3)), datasets:rvDatasets },
     options:{ responsive:true, maintainAspectRatio:false,
-      plugins:{legend:{display:false}, tooltip:{callbacks:{label:ctx=>`€${fmtK(ctx.parsed.y)}`}}},
+      plugins:{legend:{display:rvDatasets.length>1, position:'top', labels:{boxWidth:12,font:{size:11}}},
+        tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: €${fmtK(ctx.parsed.y)}`}}},
       scales:{ y:{beginAtZero:true,ticks:{callback:v=>fmtK(v)},grid:{color:'rgba(128,128,128,.08)'}}, x:{grid:{display:false}} } }
   });
 
