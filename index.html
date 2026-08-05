@@ -1655,7 +1655,7 @@ const DB = {
 <script>
 // app.js — Lógica principal · Ratios Food Cost · Bonita Menorca
 // Versión del build: visible en la barra lateral y en consola para diagnosticar cachés.
-const APP_VERSION = '2026-07-26.4';
+const APP_VERSION = '2026-08-05.1';
 console.log('Ratios Food Cost · build', APP_VERSION);
 document.addEventListener('DOMContentLoaded', () => {
   const v = document.getElementById('app-version');
@@ -2813,6 +2813,20 @@ function _buildAsiento(mes, anio){
   rows.push({cuenta:'476.0', depto:'', debe:0, haber: totCuotaObrera+tot642, col:'AC', obs:'Cuota obrera + SS empresa'});
   rows.push({cuenta:'476.1', depto:'', debe:0, haber: totAutonomo, col:'AA', obs:'Anticipo autónomo (Luis/Patri)'});
   rows.push({cuenta:'755.0', depto:'', debe:0, haber: totManut,    col:'Z',  obs:'Anticipo manutención'});
+  // 755.1 — Descuento de alojamiento (retención en nómina por el piso de personal).
+  // La gestoría lo resta del LÍQUIDO A PERCIBIR pero no lo declara en ninguna columna del export,
+  // así que lo calculamos como residuo: devengado − todas las deducciones declaradas.
+  // Es un cajón de sastre: cualquier otro concepto no declarado caería también aquí.
+  // No se calcula si faltan las columnas de deducciones (mes sin re-subir), porque entonces
+  // el residuo sería el total de retenciones y taparía el aviso de datos incompletos.
+  const totDevRaw   = sum('total_devengado');
+  const totDeducciones = totCuotaObrera + totAutonomo + totManut + totLiquido + totEmbargos + totAnticipo + totIrpf;
+  const faltanDed   = (totDevRaw>0.005) && (totCuotaObrera+totIrpf===0);
+  const residAloj   = faltanDed ? 0 : Math.round((totDevRaw - totDeducciones)*100)/100;
+  if(Math.abs(residAloj) > 0.005){
+    rows.push({cuenta:'755.1', depto:'', debe: residAloj<0 ? -residAloj : 0, haber: residAloj>0 ? residAloj : 0,
+               col:'—', obs:'Descuento alojamiento personal (calculado: devengado − deducciones declaradas)'});
+  }
   rows.push({cuenta:'465.0', depto:'', debe:0, haber: totLiquido,  col:'AF', obs:'Líquido a percibir'});
   rows.push({cuenta:'465.1', depto:'', debe:0, haber: totEmbargos, col:'AE', obs:'Embargos'});
   rows.push({cuenta:'465.2', depto:'', debe:0, haber: totAnticipo, col:'AB', obs:'Anticipos nómina'});
