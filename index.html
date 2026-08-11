@@ -1655,7 +1655,7 @@ const DB = {
 <script>
 // app.js — Lógica principal · Ratios Food Cost · Bonita Menorca
 // Versión del build: visible en la barra lateral y en consola para diagnosticar cachés.
-const APP_VERSION = '2026-08-05.1';
+const APP_VERSION = '2026-08-11.1';
 console.log('Ratios Food Cost · build', APP_VERSION);
 document.addEventListener('DOMContentLoaded', () => {
   const v = document.getElementById('app-version');
@@ -7267,6 +7267,22 @@ async function handleXlFile(file) {
     // SOLO truncamos las tablas que vienen en el Excel cargado.
     // Esto permite cargas parciales (p. ej. Dakota sube solo AGORA+DIJIT y
     // los datos de COVERMANAGER/SKELLO/etc. de otras personas no se tocan).
+    //
+    // VISITAS y COMENSALES son la excepción: no se truncan enteras, se borra
+    // solo la ventana temporal que cubre el fichero (de la fecha mínima a la
+    // máxima de las filas leídas) y se reinserta esa ventana. Motivo: Sonia
+    // exporta Codetickets/Covermanager por tramos (un año, o pasado y futuro
+    // en ficheros distintos), y con TRUNCATE cada carga borraba lo anterior
+    // — así se perdió el histórico 2025 el 11/08/2026.
+    const rangoFechas = (rows) => {
+      const f = rows.map(r => r.fecha).filter(Boolean).sort();  // 'YYYY-MM-DD' ordena bien como texto
+      return f.length ? { desde: f[0], hasta: f[f.length-1] } : null;
+    };
+    const borrarRango = async (table, rows) => {
+      const r = rangoFechas(rows);
+      if (!r) return;   // sin fechas válidas no borramos nada (mejor duplicar que perder)
+      await sbFetch(`${table}?fecha=gte.${r.desde}&fecha=lte.${r.hasta}`, {method:'DELETE'});
+    };
     await Promise.all([
       ingRows.length  > 0 ? sbFetch('rpc/truncate_table', {method:'POST', body:JSON.stringify({table_name:'ingresos'})})     : Promise.resolve(),
       gasRows.length  > 0 ? sbFetch('rpc/truncate_table', {method:'POST', body:JSON.stringify({table_name:'gastos'})})       : Promise.resolve(),
@@ -7274,8 +7290,8 @@ async function handleXlFile(file) {
       rrhhRows.length > 0 ? sbFetch('rpc/truncate_table', {method:'POST', body:JSON.stringify({table_name:'rrhh'})}) : Promise.resolve(),
       nomRows.length  > 0 ? sbFetch('rpc/truncate_table', {method:'POST', body:JSON.stringify({table_name:'nominas'})}) : Promise.resolve(),
       pnomRows.length > 0 ? sbFetch('rpc/truncate_table', {method:'POST', body:JSON.stringify({table_name:'presupuesto_nominas'})}) : Promise.resolve(),
-      visRows.length  > 0 ? sbFetch('rpc/truncate_table', {method:'POST', body:JSON.stringify({table_name:'visitas'})}) : Promise.resolve(),
-      coRows.length   > 0 ? sbFetch('rpc/truncate_table', {method:'POST', body:JSON.stringify({table_name:'comensales'})}) : Promise.resolve(),
+      visRows.length  > 0 ? borrarRango('visitas', visRows)    : Promise.resolve(),
+      coRows.length   > 0 ? borrarRango('comensales', coRows)  : Promise.resolve(),
       ecoRows.length  > 0 ? sbFetch('rpc/truncate_table', {method:'POST', body:JSON.stringify({table_name:'ecommerce'})}) : Promise.resolve(),
     ]);
     document.getElementById('xl-bar').style.width = '80%';
@@ -7316,8 +7332,15 @@ async function handleXlFile(file) {
     if (rrhhRows.length > 0)      DB.rrhh = rrhhRows;
     if (nomRows.length > 0)       DB.nominas = nomRows;
     if (pnomRows.length > 0)      DB.presupuesto_nominas = pnomRows;
-    if (visRows.length > 0)       DB.visitas = visRows;
-    if (coRows.length > 0)        DB.comensales = coRows;
+    // Visitas y comensales: mismo criterio que en Supabase — se reemplaza solo
+    // la ventana de fechas del fichero, el resto del histórico se conserva.
+    const fusionarRango = (prev, rows) => {
+      const r = rangoFechas(rows);
+      if (!r) return rows;
+      return (prev||[]).filter(x => !(x.fecha >= r.desde && x.fecha <= r.hasta)).concat(rows);
+    };
+    if (visRows.length > 0)       DB.visitas = fusionarRango(DB.visitas, visRows);
+    if (coRows.length > 0)        DB.comensales = fusionarRango(DB.comensales, coRows);
     if (ecoRows.length > 0)       DB.ecommerce = ecoRows;
     if (ingHistRows.length > 0)   DB.ingresos_historico = ingHistRows;
     aplicarAjustesIngresos();   // aplicar el ajuste también justo tras la carga del Excel
@@ -7338,8 +7361,16 @@ async function handleXlFile(file) {
     if (rrhhRows.length > 0)    cargados.push(`${rrhhRows.length.toLocaleString('es-ES',{useGrouping:'always'})} horas`);
     if (nomRows.length > 0)     cargados.push(`${nomRows.length.toLocaleString('es-ES',{useGrouping:'always'})} nóminas`);
     if (pnomRows.length > 0)    cargados.push(`${pnomRows.length.toLocaleString('es-ES',{useGrouping:'always'})} presup. nóm.`);
-    if (visRows.length > 0)     cargados.push(`${visRows.length.toLocaleString('es-ES',{useGrouping:'always'})} visitas`);
-    if (coRows.length > 0)      cargados.push(`${coRows.length.toLocaleString('es-ES',{useGrouping:'always'})} comensales`);
+    // En visitas y comensales indicamos la ventana reemplazada, para que quede
+    // claro qué tramo se ha sustituido y qué histórico se ha respetado.
+    const etiqRango = (rows) => {
+      const r = rangoFechas(rows);
+      if (!r) return '';
+      const dm = s => s.slice(8,10) + '/' + s.slice(5,7) + '/' + s.slice(0,4);
+      return ` (${dm(r.desde)}→${dm(r.hasta)})`;
+    };
+    if (visRows.length > 0)     cargados.push(`${visRows.length.toLocaleString('es-ES',{useGrouping:'always'})} visitas${etiqRango(visRows)}`);
+    if (coRows.length > 0)      cargados.push(`${coRows.length.toLocaleString('es-ES',{useGrouping:'always'})} comensales${etiqRango(coRows)}`);
     if (ecoRows.length > 0)     cargados.push(`${ecoRows.length.toLocaleString('es-ES',{useGrouping:'always'})} pedidos ecommerce`);
     if (ingHistRows.length > 0) cargados.push(`${ingHistRows.length.toLocaleString('es-ES',{useGrouping:'always'})} ing. históricos`);
     document.getElementById('xl-msg').textContent = `✓ Cargado: ${cargados.join(' · ')}${prodWarning}`;
