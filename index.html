@@ -1663,7 +1663,7 @@ const DB = {
 <script>
 // app.js — Lógica principal · Ratios Food Cost · Bonita Menorca
 // Versión del build: visible en la barra lateral y en consola para diagnosticar cachés.
-const APP_VERSION = '2026-08-16.1';
+const APP_VERSION = '2026-08-16.2';
 console.log('Ratios Food Cost · build', APP_VERSION);
 
 // ── Corte Dijit → App Compras ────────────────────────────────────
@@ -6588,7 +6588,17 @@ async function handleXlFile(file) {
     'INGRESOS 2024':         'Ingresos 2024 (histórico)',
     'INGRESOS 2025':         'Ingresos 2025 (histórico)',
   };
+  // Resolución tolerante a mayúsculas/minúsculas y espacios: la App Compras
+  // exporta la hoja como "Compras" y Dakota puede renombrarla al pegarla.
+  // Devuelve el nombre REAL de la hoja en el fichero, o null.
+  const hojaReal = (canon) => wb.SheetNames.find(x => x.trim().toUpperCase() === canon) || null;
+  const hojaCompras = hojaReal('COMPRAS');
+  const hojaDijit   = hojaReal('DIJIT');
   const hojasPresentes = wb.SheetNames.filter(n => HOJAS_CONOCIDAS[n]);
+  // Añadimos DIJIT y COMPRAS por su nombre canónico si se han encontrado con
+  // otra grafía, para que el guard del catálogo y el resumen los vean.
+  if (hojaDijit   && !hojasPresentes.includes('DIJIT'))   hojasPresentes.push('DIJIT');
+  if (hojaCompras && !hojasPresentes.includes('COMPRAS')) hojasPresentes.push('COMPRAS');
   const ecoSheetDetectada = findEcommerceSheet(wb);   // detección por firma de columnas (fichero NURIA)
   if (hojasPresentes.length === 0 && !ecoSheetDetectada) {
     document.getElementById('xl-msg').textContent = '⚠ Este archivo no contiene ninguna pestaña reconocida. Pestañas esperadas: ' + Object.keys(HOJAS_CONOCIDAS).join(', ') + ', o un export de Shopify (NURIA).';
@@ -6807,9 +6817,9 @@ async function handleXlFile(file) {
   document.getElementById('xl-gas-count').textContent = 'Procesando...';
   const gasRows = [];
   let gasFueraCorte = 0;   // filas de Dijit con fecha >= corte: ya vienen de la App Compras
-  if (wb.SheetNames.includes('DIJIT')) {
+  if (hojaDijit) {
    try {
-    const ws = wb.Sheets['DIJIT'];
+    const ws = wb.Sheets[hojaDijit];
     const data = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:""});
     if (!data.length) throw new Error('Hoja DIJIT vacía');
 
@@ -6902,9 +6912,9 @@ async function handleXlFile(file) {
   document.getElementById('xl-comp-count').textContent = 'Procesando...';
   const compRows = [];
   let compFueraCorte = 0, compSinCanal = 0, compSinCodigo = 0;
-  if (wb.SheetNames.includes('COMPRAS')) {
+  if (hojaCompras) {
    try {
-    const ws = wb.Sheets['COMPRAS'];
+    const ws = wb.Sheets[hojaCompras];
     const data = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:""});
     if (!data.length) throw new Error('Hoja COMPRAS vacía');
 
