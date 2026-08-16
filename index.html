@@ -1100,7 +1100,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
       <div id="clasif-pane-dijit" class="clasif-pane" style="display:none">
         <div class="card">
           <div class="card-t" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-            <span>Productos Dijit · <span id="pd-count" style="color:#888;font-weight:normal;font-size:13px"></span></span>
+            <span>Productos de compras · <span id="pd-count" style="color:#888;font-weight:normal;font-size:13px"></span></span>
             <button class="btn-sm" onclick="addProductoManual('dijit')">+ Producto manual</button>
           </div>
           <div class="fbar" style="margin:8px 0 12px 0">
@@ -1114,6 +1114,12 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
               <option value="">Todas</option>
               <option value="__SIN__">Sin clasificar</option>
             </select>
+            <span class="fbar-label">Origen</span>
+            <select id="pd-origen-filter" onchange="renderProdDijit()" style="font-size:12px;padding:4px 8px">
+              <option value="">Todos</option>
+              <option value="COMPRAS">App Compras</option>
+              <option value="DIJIT">Dijit (histórico)</option>
+            </select>
             <span class="fbar-label">Buscar</span>
             <input type="text" id="pd-search" placeholder="ID o descripción..." oninput="renderProdDijit()" style="font-size:12px;padding:4px 8px;width:200px">
           </div>
@@ -1121,6 +1127,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
             <thead style="position:sticky;top:0;background:#fff;z-index:2">
               <tr>
                 <th style="width:90px"><span style="cursor:pointer;user-select:none" onclick="sortProd('pd','id_interno')">ID<span id="pd-arr-id_interno"></span></span></th>
+                <th style="width:75px"><span style="cursor:pointer;user-select:none" onclick="sortProd('pd','origen')">Origen<span id="pd-arr-origen"></span></span></th>
                 <th><span style="cursor:pointer;user-select:none" onclick="sortProd('pd','descripcion')">Descripción<span id="pd-arr-descripcion"></span></span></th>
                 <th style="width:160px"><span style="cursor:pointer;user-select:none" onclick="sortProd('pd','familia')">Familia<span id="pd-arr-familia"></span></span></th>
                 <th style="width:180px"><span style="cursor:pointer;user-select:none" onclick="sortProd('pd','subfamilia')">Subfamilia<span id="pd-arr-subfamilia"></span></span></th>
@@ -1454,7 +1461,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
         <div style="font-size:12px;color:#888;margin-bottom:16px;">
           Cada persona puede subir un Excel <strong>solo con sus pestañas</strong> y el sistema reemplaza únicamente los datos correspondientes — lo que no venga en el Excel se mantiene intacto.<br>
           <span style="display:inline-block;margin-top:6px">
-            📋 <strong>Dakota</strong>: AGORA · DIJIT &nbsp;·&nbsp;
+            📋 <strong>Dakota</strong>: AGORA · DIJIT · COMPRAS &nbsp;·&nbsp;
             👥 <strong>Silvia</strong>: SKELLO · NOMINAS &nbsp;·&nbsp;
             💼 <strong>Luis/Patricia</strong>: PRESUPUESTO INGRESOS · PRESUPUESTO NOMINAS &nbsp;·&nbsp;
             🍽️ <strong>Sonia</strong>: COVERMANAGER · CODETICKETS
@@ -1477,7 +1484,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
           <div class="xl-progress-bar"><div class="xl-progress-fill" id="xl-bar" style="width:0%"></div></div>
           <div class="xl-sheet-status" id="xl-status">
             <div class="xl-sheet-row"><span class="sheet-name">📋 AGORA (ventas)</span><span class="sheet-count" id="xl-ing-count">Esperando...</span><span class="sheet-wait" id="xl-ing-ico">○</span></div>
-            <div class="xl-sheet-row"><span class="sheet-name">🛒 DIJIT (compras)</span><span class="sheet-count" id="xl-gas-count">Esperando...</span><span class="sheet-wait" id="xl-gas-ico">○</span></div>
+            <div class="xl-sheet-row"><span class="sheet-name">🛒 DIJIT (compras hasta el corte)</span><span class="sheet-count" id="xl-gas-count">Esperando...</span><span class="sheet-wait" id="xl-gas-ico">○</span></div>
+            <div class="xl-sheet-row"><span class="sheet-name">🧾 COMPRAS (App Compras)</span><span class="sheet-count" id="xl-comp-count">Esperando...</span><span class="sheet-wait" id="xl-comp-ico">○</span></div>
             <div class="xl-sheet-row"><span class="sheet-name">📅 PRESUPUESTO INGRESOS</span><span class="sheet-count" id="xl-ppto-count">Esperando...</span><span class="sheet-wait" id="xl-ppto-ico">○</span></div>
             <div class="xl-sheet-row"><span class="sheet-name">💶 NOMINAS</span><span class="sheet-count" id="xl-nm-count">Esperando...</span><span class="sheet-wait" id="xl-nm-ico">○</span></div>
             <div class="xl-sheet-row"><span class="sheet-name">📊 PRESUPUESTO NOMINAS</span><span class="sheet-count" id="xl-pnom-count">Esperando...</span><span class="sheet-wait" id="xl-pnom-ico">○</span></div>
@@ -1655,8 +1663,38 @@ const DB = {
 <script>
 // app.js — Lógica principal · Ratios Food Cost · Bonita Menorca
 // Versión del build: visible en la barra lateral y en consola para diagnosticar cachés.
-const APP_VERSION = '2026-08-11.1';
+const APP_VERSION = '2026-08-16.1';
 console.log('Ratios Food Cost · build', APP_VERSION);
+
+// ── Corte Dijit → App Compras ────────────────────────────────────
+// Desde el 1 de agosto de 2026 las compras dejan de venir de Dijit y vienen
+// de la App Compras. Una sola constante gobierna las dos hojas del Excel de
+// Dakota, en sentidos opuestos, para que no pueda haber ni solape ni hueco:
+//   hoja DIJIT   → solo filas con fecha  <  FECHA_CORTE_COMPRAS
+//   hoja COMPRAS → solo filas con fecha >=  FECHA_CORTE_COMPRAS
+// Si algún día hay que mover el corte, se cambia aquí y nada más.
+const FECHA_CORTE_COMPRAS = '2026-08-01';
+
+// Los centros de coste de la App Compras son más finos que los de Ratios.
+// Este mapeo es la única traducción entre ambos mundos.
+const CANAL_COMPRAS = {
+  'BINIFADET RESTAURANTE':  'BINIFADET',
+  'BINIFADET BODEGA':       'BODEGA',
+  'BINIFADET TIENDA':       'TIENDA',
+  'TAMARINDOS RESTAURANTE': 'TAMARINDOS',
+  'TAMARINDOS BAR':         'TAMARINDOS BAR',
+  'CASA TIRANT':            'TIRANT',
+  'COCINA PRODUCCION':      'PRODUCCION',
+  'COCINA PRODUCCIÓN':      'PRODUCCION',
+  'ESTRUCTURA':             'ESTRUCTURA',
+  // Por si algún albarán llega ya con el nombre corto de Ratios
+  'BINIFADET':'BINIFADET', 'BODEGA':'BODEGA', 'TIENDA':'TIENDA',
+  'TAMARINDOS':'TAMARINDOS', 'TIRANT':'TIRANT', 'PRODUCCION':'PRODUCCION',
+};
+function canalCompras(v) {
+  const k = (v||'').toString().trim().toUpperCase();
+  return CANAL_COMPRAS[k] || '';
+}
 document.addEventListener('DOMContentLoaded', () => {
   const v = document.getElementById('app-version');
   if (v) v.textContent = 'build ' + APP_VERSION;
@@ -5819,6 +5857,9 @@ function famSubSelectsRow(prefix, p, id) {
   } else {
     return `<tr style="${bg}">
       <td style="font-size:11px;font-family:monospace">${p.id_interno||''}</td>
+      <td>${(p.origen||'DIJIT')==='COMPRAS'
+            ? '<span style="font-size:10px;padding:1px 5px;border-radius:4px;background:#E3F3EC;color:#1D9E75">App</span>'
+            : '<span style="font-size:10px;padding:1px 5px;border-radius:4px;background:#EFEFEF;color:#888">Dijit</span>'}</td>
       <td style="font-size:12px">${p.descripcion||''}</td>
       <td><select onchange="updateProductoFam('dijit',${idEsc},this.value)" style="font-size:11px;padding:2px 4px;width:100%">${famOpts}</select></td>
       <td><select onchange="updateProductoSub('dijit',${idEsc},this.value)" style="font-size:11px;padding:2px 4px;width:100%">${subOpts}</select></td>
@@ -5856,6 +5897,9 @@ function renderProdDijit() {
   if (search) {
     rows = rows.filter(p => (p.id_interno||'').toLowerCase().includes(search) || (p.descripcion||'').toLowerCase().includes(search));
   }
+  // Origen: DIJIT es el histórico (se borrará), COMPRAS es lo que va a Hostelero
+  const origenFilter = (document.getElementById('pd-origen-filter')||{}).value || '';
+  if (origenFilter) rows = rows.filter(p => (p.origen || 'DIJIT') === origenFilter);
 
   // Cantidades/euros comprados por producto (id_interno ↔ id_prod de gastos)
   const movs = aggregarMovimientos(DB.gastos||[], 'id_prod');
@@ -5879,7 +5923,12 @@ function renderProdDijit() {
     return 0;
   });
 
-  document.getElementById('pd-count').textContent = `${rows.length} de ${(DB.productos_dijit||[]).length}`;
+  {
+    const nApp = (DB.productos_dijit||[]).filter(p => (p.origen||'DIJIT') === 'COMPRAS').length;
+    const nDij = (DB.productos_dijit||[]).length - nApp;
+    document.getElementById('pd-count').textContent =
+      `${rows.length} de ${(DB.productos_dijit||[]).length} · ${nApp} App Compras · ${nDij} Dijit`;
+  }
 
   // Huérfanos en gastos
   const catSet = new Set((DB.productos_dijit||[]).map(p => String(p.id_interno||'').trim()));
@@ -5892,14 +5941,14 @@ function renderProdDijit() {
   });
   let huerfMsg = '';
   if (huerfanos.size > 0 && !famFilter && !subFilter && !search) {
-    huerfMsg = `<tr style="background:#fff3e0"><td colspan="10" style="padding:8px;font-size:12px;color:#BA7517">
+    huerfMsg = `<tr style="background:#fff3e0"><td colspan="11" style="padding:8px;font-size:12px;color:#BA7517">
       ⚠ Hay ${huerfanos.size} productos en compras que NO están en el catálogo.
       <button class="btn-sm" onclick="importarHuerfanos('dijit')" style="margin-left:8px">Importar al catálogo</button>
     </td></tr>`;
   }
 
   if (!rows.length) {
-    tb.innerHTML = huerfMsg + '<tr><td colspan="10" style="text-align:center;color:#aaa;padding:20px">Sin productos</td></tr>';
+    tb.innerHTML = huerfMsg + '<tr><td colspan="11" style="text-align:center;color:#aaa;padding:20px">Sin productos</td></tr>';
     return;
   }
 
@@ -6015,7 +6064,8 @@ async function addProductoManual(tipo) {
   const tabla = tipo === 'agora' ? 'productos_agora' : 'productos_dijit';
   const newRow = tipo === 'agora'
     ? { id_prod: idTrim, producto: name.trim(), familia: '', subfamilia: '', factor: 1 }
-    : { id_interno: idTrim, descripcion: name.trim(), familia: '', subfamilia: '', factor: 1, unidades: '' };
+    : { id_interno: idTrim, descripcion: name.trim(), familia: '', subfamilia: '', factor: 1, unidades: '',
+        origen: /^P-/i.test(idTrim) ? 'COMPRAS' : 'DIJIT' };
   try {
     setSyncStatus('Guardando...', '#BA7517');
     await sbFetch(tabla, {method:'POST', body: JSON.stringify(newRow)});
@@ -6068,7 +6118,9 @@ async function importarHuerfanos(tipo) {
     if (!huerfanos.size) return;
     if (!confirm(`Importar ${huerfanos.size} productos huérfanos al catálogo (sin clasificar)?`)) return;
     const nuevos = [...huerfanos.entries()].map(([id, nm]) => ({
-      id_interno: id, descripcion: nm || id, familia: '', subfamilia: '', factor: 1, unidades: ''
+      id_interno: id, descripcion: nm || id, familia: '', subfamilia: '', factor: 1, unidades: '',
+      // Los códigos P-xxxxx vienen de la App Compras; los numéricos, de Dijit.
+      origen: /^P-/i.test(String(id)) ? 'COMPRAS' : 'DIJIT'
     }));
     try {
       setSyncStatus('Importando...', '#BA7517');
@@ -6488,7 +6540,7 @@ async function handleXlFile(file) {
   document.getElementById('xl-progress').style.display = 'block';
   document.getElementById('xl-bar').style.width = '0%';
   document.getElementById('xl-msg').textContent = '';
-  ['ing','gas','ppto','rrhh','pa','pd','eco'].forEach(k => {
+  ['ing','gas','comp','ppto','rrhh','pa','pd','eco'].forEach(k => {
     const cnt = document.getElementById('xl-'+k+'-count');
     const ico = document.getElementById('xl-'+k+'-ico');
     if (cnt) cnt.textContent = 'Esperando...';
@@ -6522,7 +6574,8 @@ async function handleXlFile(file) {
   // que procesar y mostramos un resumen claro al usuario.
   const HOJAS_CONOCIDAS = {
     'AGORA':                 'Ágora (ventas)',
-    'DIJIT':                 'Dijit (compras)',
+    'DIJIT':                 'Dijit (compras hasta el corte)',
+    'COMPRAS':               'App Compras (desde el corte)',
     'PRESUPUESTO INGRESOS':  'Presupuesto ingresos',
     'PRESUPUESTO':           'Presupuesto ingresos (formato antiguo)',
     'SKELLO':                'Skello (horas)',
@@ -6553,7 +6606,7 @@ async function handleXlFile(file) {
     document.getElementById('xl-msg').style.color = 'var(--red)';
     return;
   }
-  if (hojasPresentes.includes('DIJIT') && (DB.productos_dijit||[]).length === 0) {
+  if ((hojasPresentes.includes('DIJIT') || hojasPresentes.includes('COMPRAS')) && (DB.productos_dijit||[]).length === 0) {
     document.getElementById('xl-msg').textContent = '⚠ El catálogo de productos Dijit aún no se ha cargado (la app sigue sincronizando o hubo un error de conexión). Espera unos segundos a que arriba ponga "✓ N registros" y vuelve a subir el archivo. Si persiste, recarga la página.';
     document.getElementById('xl-msg').style.color = 'var(--red)';
     return;
@@ -6753,6 +6806,7 @@ async function handleXlFile(file) {
   // Unidades = CANTIDAD × FACTOR.
   document.getElementById('xl-gas-count').textContent = 'Procesando...';
   const gasRows = [];
+  let gasFueraCorte = 0;   // filas de Dijit con fecha >= corte: ya vienen de la App Compras
   if (wb.SheetNames.includes('DIJIT')) {
    try {
     const ws = wb.Sheets['DIJIT'];
@@ -6790,6 +6844,9 @@ async function handleXlFile(file) {
       if (!fecha || !canal_g) continue;
       const fechaFmt = xlDate(fecha);
       if (!fechaFmt) continue;
+      // Corte: a partir del 1 de agosto de 2026 las compras las manda la App
+      // Compras. Descartamos aquí para no duplicar con la hoja COMPRAS.
+      if (fechaFmt >= FECHA_CORTE_COMPRAS) { gasFueraCorte++; continue; }
       const m   = extractMesFromFecha(fechaFmt);
       const sem = isoWeek(fechaFmt);
       const sfloat = v => { const n = parseFloat(String(v||0).replace(',','.')); return isNaN(n)?0:n; };
@@ -6815,10 +6872,12 @@ async function handleXlFile(file) {
         total: sfloat(total_g),
         factor: factor,
         unidades: cant * factor,
-        semana: sem, mes: m
+        semana: sem, mes: m,
+        origen: 'DIJIT'
       });
     }
-    document.getElementById('xl-gas-count').textContent = gasRows.length + ' filas';
+    document.getElementById('xl-gas-count').textContent = gasRows.length + ' filas'
+      + (gasFueraCorte ? ` · ${gasFueraCorte} desde el ${FECHA_CORTE_COMPRAS.slice(8,10)}/${FECHA_CORTE_COMPRAS.slice(5,7)} ignoradas (vienen de la App Compras)` : '');
     document.getElementById('xl-gas-ico').textContent = '✓';
     document.getElementById('xl-gas-ico').className = 'sheet-ok';
    } catch(e) {
@@ -6830,6 +6889,98 @@ async function handleXlFile(file) {
     // Pestaña no incluida en este Excel (carga parcial) — los datos existentes no se tocan
     document.getElementById('xl-gas-count').textContent = 'No incluida';
     document.getElementById('xl-gas-ico').textContent = '—';
+  }
+  document.getElementById('xl-bar').style.width = '45%';
+
+  // ── Parsear COMPRAS (App Compras) ──
+  // Formato del Excel que exporta la App Compras (pestaña "Compras"):
+  //   Fecha · Proveedor · Nº albarán · ID producto · Cód. App · Producto App ·
+  //   Producto · Cantidad · Importe · Canal
+  // La clave de catálogo es "Cód. App" (P-00001…), NO "ID producto": esa es la
+  // referencia del proveedor y el mismo artículo lleva códigos distintos según
+  // quién lo sirva. Familia, subfamilia y factor salen siempre del catálogo.
+  document.getElementById('xl-comp-count').textContent = 'Procesando...';
+  const compRows = [];
+  let compFueraCorte = 0, compSinCanal = 0, compSinCodigo = 0;
+  if (wb.SheetNames.includes('COMPRAS')) {
+   try {
+    const ws = wb.Sheets['COMPRAS'];
+    const data = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:""});
+    if (!data.length) throw new Error('Hoja COMPRAS vacía');
+
+    const headers = (data[0]||[]).map(h => String(h||'').trim().toUpperCase());
+    const findCol = (...candidatos) => {
+      for (const cand of candidatos) {
+        const idx = headers.indexOf(cand.toUpperCase());
+        if (idx !== -1) return idx;
+      }
+      return -1;
+    };
+    const cIdx = {
+      fecha:    findCol('FECHA'),
+      prov:     findCol('PROVEEDOR'),
+      codApp:   findCol('CÓD. APP', 'COD. APP', 'CÓD APP', 'COD APP'),
+      prod:     findCol('PRODUCTO APP', 'PRODUCTO'),
+      cantidad: findCol('CANTIDAD'),
+      importe:  findCol('IMPORTE', 'MONTO', 'TOTAL'),
+      canal:    findCol('CANAL', 'CENTRO', 'PROYECTO')
+    };
+    const faltan = Object.entries(cIdx).filter(([,v]) => v === -1).map(([k]) => k);
+    if (faltan.length) throw new Error('Faltan columnas en COMPRAS: ' + faltan.join(', '));
+    const idxProdCrudo = findCol('PRODUCTO');   // nombre leído del albarán, de respaldo
+
+    for (let i = 1; i < data.length; i++) {
+      const cols = data[i];
+      if (!cols) continue;
+      const fechaFmt = xlDate(cols[cIdx.fecha]);
+      if (!fechaFmt) continue;
+      // Corte: solo desde el 1 de agosto de 2026. Lo anterior ya está en Ratios
+      // vía Dijit; cargarlo aquí duplicaría el coste.
+      if (fechaFmt < FECHA_CORTE_COMPRAS) { compFueraCorte++; continue; }
+      const centro = canalCompras(cols[cIdx.canal]);
+      if (!centro) { compSinCanal++; continue; }   // sin centro no se puede imputar
+      const sfloat = v => { const n = parseFloat(String(v||0).replace(',','.')); return isNaN(n)?0:n; };
+      const idP = String(cols[cIdx.codApp]||'').trim();
+      if (!idP) compSinCodigo++;                  // entra, pero saldrá sin clasificar
+      const prod = cols[cIdx.prod] || (idxProdCrudo !== -1 ? cols[idxProdCrudo] : '');
+      const cat = idP ? (DB.productos_dijit||[]).find(p => String(p.id_interno||'').trim() === idP) : null;
+      const factor = cat ? (parseFloat(cat.factor)||1) : 1;
+      const cant = sfloat(cols[cIdx.cantidad]);
+      const imp  = sfloat(cols[cIdx.importe]);
+      compRows.push({
+        id: nextId(), fecha: fechaFmt,
+        centro: centro,
+        proveedor: (cols[cIdx.prov]||'—').toString(),
+        producto: (prod||'—').toString(),
+        id_prod: idP,
+        familia: cat ? (cat.familia||'COMIDA').toString().trim().toUpperCase() : 'COMIDA',
+        subfamilia: cat ? (cat.subfamilia||'VARIOS').toString().trim() : 'VARIOS',
+        cantidad: cant,
+        unidad: 'UND',
+        base: imp,
+        total: imp,
+        factor: factor,
+        unidades: cant * factor,
+        semana: isoWeek(fechaFmt), mes: extractMesFromFecha(fechaFmt),
+        origen: 'COMPRAS'
+      });
+    }
+    const avisos = [];
+    if (compFueraCorte) avisos.push(`${compFueraCorte} anteriores al corte ignoradas`);
+    if (compSinCanal)   avisos.push(`${compSinCanal} sin centro descartadas`);
+    if (compSinCodigo)  avisos.push(`${compSinCodigo} sin Cód. App (saldrán sin clasificar)`);
+    document.getElementById('xl-comp-count').textContent = compRows.length + ' filas'
+      + (avisos.length ? ' · ' + avisos.join(' · ') : '');
+    document.getElementById('xl-comp-ico').textContent = '✓';
+    document.getElementById('xl-comp-ico').className = (compSinCanal || compSinCodigo) ? 'sheet-err' : 'sheet-ok';
+   } catch(e) {
+    document.getElementById('xl-comp-count').textContent = 'Error: ' + e.message;
+    document.getElementById('xl-comp-ico').textContent = '✗';
+    document.getElementById('xl-comp-ico').className = 'sheet-err';
+   }
+  } else {
+    document.getElementById('xl-comp-count').textContent = 'No incluida';
+    document.getElementById('xl-comp-ico').textContent = '—';
   }
   document.getElementById('xl-bar').style.width = '55%';
 
@@ -7278,6 +7429,23 @@ async function handleXlFile(file) {
       const f = rows.map(r => r.fecha).filter(Boolean).sort();  // 'YYYY-MM-DD' ordena bien como texto
       return f.length ? { desde: f[0], hasta: f[f.length-1] } : null;
     };
+    // GASTOS: ya no se trunca la tabla entera. Conviven dos orígenes (DIJIT
+    // histórico y COMPRAS, que es lo que se integrará en Hostelero) y cada hoja
+    // reemplaza solo lo suyo. Así Dakota puede subir una hoja, las dos, o
+    // repetir la misma carga sin duplicar ni borrar el otro origen.
+    // La columna origen nunca es nula: las filas históricas se rellenaron en la
+    // migración y la tabla tiene default 'DIJIT'. Por eso basta con la igualdad.
+    const borrarOrigen = async (origen) => {
+      await sbFetch(`gastos?origen=eq.${encodeURIComponent(origen)}`, {method:'DELETE'});
+      if (origen === 'COMPRAS') {
+        // Red de seguridad: en Ratios quedan compras de Dijit posteriores al
+        // corte (se cargaron antes de fijarlo). Si no se limpian, agosto queda
+        // contado dos veces en cuanto entre la hoja COMPRAS. Con una carga que
+        // incluya la hoja DIJIT desaparecen solas, pero Dakota puede subir solo
+        // COMPRAS, así que las purgamos aquí explícitamente.
+        await sbFetch(`gastos?origen=eq.DIJIT&fecha=gte.${FECHA_CORTE_COMPRAS}`, {method:'DELETE'});
+      }
+    };
     const borrarRango = async (table, rows) => {
       const r = rangoFechas(rows);
       if (!r) return;   // sin fechas válidas no borramos nada (mejor duplicar que perder)
@@ -7285,7 +7453,8 @@ async function handleXlFile(file) {
     };
     await Promise.all([
       ingRows.length  > 0 ? sbFetch('rpc/truncate_table', {method:'POST', body:JSON.stringify({table_name:'ingresos'})})     : Promise.resolve(),
-      gasRows.length  > 0 ? sbFetch('rpc/truncate_table', {method:'POST', body:JSON.stringify({table_name:'gastos'})})       : Promise.resolve(),
+      gasRows.length  > 0 ? borrarOrigen('DIJIT')   : Promise.resolve(),
+      compRows.length > 0 ? borrarOrigen('COMPRAS') : Promise.resolve(),
       pptoRows.length > 0 ? sbFetch('rpc/truncate_table', {method:'POST', body:JSON.stringify({table_name:'presupuesto'})})  : Promise.resolve(),
       rrhhRows.length > 0 ? sbFetch('rpc/truncate_table', {method:'POST', body:JSON.stringify({table_name:'rrhh'})}) : Promise.resolve(),
       nomRows.length  > 0 ? sbFetch('rpc/truncate_table', {method:'POST', body:JSON.stringify({table_name:'nominas'})}) : Promise.resolve(),
@@ -7306,6 +7475,7 @@ async function handleXlFile(file) {
     if (ingRows.length > 0)       await insertAll('ingresos',    ingRows);
     document.getElementById('xl-bar').style.width = '86%';
     if (gasRows.length > 0)       await insertAll('gastos',      gasRows);
+    if (compRows.length > 0)      await insertAll('gastos',      compRows);
     document.getElementById('xl-bar').style.width = '92%';
     if (pptoRows.length > 0)      await insertAll('presupuesto', pptoRows);
     if (rrhhRows.length > 0)      await insertAll('rrhh', rrhhRows);
@@ -7327,7 +7497,14 @@ async function handleXlFile(file) {
     // Actualizar DB local SOLO con lo que se ha cargado en este Excel.
     // Lo que no viene en el Excel se mantiene tal cual estaba.
     if (ingRows.length > 0)       DB.ingresos    = ingRows;
-    if (gasRows.length > 0)       DB.gastos      = gasRows;
+    // Gastos: mismo criterio que en Supabase — cada hoja reemplaza su origen y
+    // el otro se conserva intacto.
+    if (gasRows.length > 0 || compRows.length > 0) {
+      let base = DB.gastos || [];
+      if (gasRows.length  > 0) base = base.filter(r => (r.origen || 'DIJIT') !== 'DIJIT');
+      if (compRows.length > 0) base = base.filter(r => r.origen !== 'COMPRAS');
+      DB.gastos = base.concat(gasRows, compRows);
+    }
     if (pptoRows.length > 0)      DB.presupuesto = pptoRows;
     if (rrhhRows.length > 0)      DB.rrhh = rrhhRows;
     if (nomRows.length > 0)       DB.nominas = nomRows;
@@ -7352,11 +7529,12 @@ async function handleXlFile(file) {
     DB.ingresos = DB.ingresos.map(resolveIng);
     DB.gastos   = DB.gastos.map(resolveGas);
 
-    const total = ingRows.length + gasRows.length + pptoRows.length + rrhhRows.length + nomRows.length + pnomRows.length + visRows.length + coRows.length + ingHistRows.length;
+    const total = ingRows.length + gasRows.length + compRows.length + pptoRows.length + rrhhRows.length + nomRows.length + pnomRows.length + visRows.length + coRows.length + ingHistRows.length;
     // Resumen de qué tablas se han actualizado en esta carga
     const cargados = [];
     if (ingRows.length > 0)     cargados.push(`${ingRows.length.toLocaleString('es-ES',{useGrouping:'always'})} ventas`);
-    if (gasRows.length > 0)     cargados.push(`${gasRows.length.toLocaleString('es-ES',{useGrouping:'always'})} compras`);
+    if (gasRows.length > 0)     cargados.push(`${gasRows.length.toLocaleString('es-ES',{useGrouping:'always'})} compras Dijit`);
+    if (compRows.length > 0)    cargados.push(`${compRows.length.toLocaleString('es-ES',{useGrouping:'always'})} compras App`);
     if (pptoRows.length > 0)    cargados.push(`${pptoRows.length.toLocaleString('es-ES',{useGrouping:'always'})} presup.`);
     if (rrhhRows.length > 0)    cargados.push(`${rrhhRows.length.toLocaleString('es-ES',{useGrouping:'always'})} horas`);
     if (nomRows.length > 0)     cargados.push(`${nomRows.length.toLocaleString('es-ES',{useGrouping:'always'})} nóminas`);
