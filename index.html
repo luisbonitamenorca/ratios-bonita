@@ -1459,25 +1459,25 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
       <div class="card">
         <div class="card-t">Cargar datos desde Excel</div>
         <div style="font-size:12px;color:#888;margin-bottom:16px;">
-          Cada persona puede subir un Excel <strong>solo con sus pestañas</strong> y el sistema reemplaza únicamente los datos correspondientes — lo que no venga en el Excel se mantiene intacto.<br>
+          <strong>Un fichero por pestaña</strong>: el archivo se llama como la pestaña que contiene. Puedes subir varios a la vez y el sistema reemplaza únicamente los datos de lo que subas — lo que no venga se mantiene intacto.<br>
           <span style="display:inline-block;margin-top:6px">
-            📋 <strong>Dakota</strong>: AGORA · DIJIT · COMPRAS &nbsp;·&nbsp;
-            👥 <strong>Silvia</strong>: SKELLO · NOMINAS &nbsp;·&nbsp;
-            💼 <strong>Luis/Patricia</strong>: PRESUPUESTO INGRESOS · PRESUPUESTO NOMINAS &nbsp;·&nbsp;
-            🍽️ <strong>Sonia</strong>: COVERMANAGER · CODETICKETS
-          </span>
+            📋 AGORA &nbsp;·&nbsp; 🛒 DIJIT &nbsp;·&nbsp; 🧾 COMPRAS &nbsp;·&nbsp;
+            📅 PRESUPUESTO INGRESOS &nbsp;·&nbsp; 💶 NOMINAS &nbsp;·&nbsp; 📊 PRESUPUESTO NOMINAS &nbsp;·&nbsp;
+            🎫 CODETICKETS &nbsp;·&nbsp; 🍽️ COVERMANAGER &nbsp;·&nbsp; 🛍️ SHOPIFY
+          </span><br>
+          <span style="display:inline-block;margin-top:6px">Las horas de Skello van en su propio cargador, más abajo.</span>
         </div>
 
-        <input type="file" id="xl-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleXlFile(this.files[0])">
+        <input type="file" id="xl-input" accept=".xlsx,.xls,.csv" multiple style="display:none" onchange="handleXlFiles(this.files)">
 
         <div class="drop-zone" id="xl-drop"
           onclick="document.getElementById('xl-input').click()"
           ondragover="event.preventDefault();this.classList.add('drag-over')"
           ondragleave="this.classList.remove('drag-over')"
-          ondrop="event.preventDefault();this.classList.remove('drag-over');handleXlFile(event.dataTransfer.files[0])">
+          ondrop="event.preventDefault();this.classList.remove('drag-over');handleXlFiles(event.dataTransfer.files)">
           <div class="drop-icon">📊</div>
-          <div class="drop-title">Arrastra el Excel aquí o haz clic para buscarlo</div>
-          <div class="drop-sub">El Excel puede contener cualquier subconjunto de las pestañas — el sistema detecta automáticamente qué cargar. También acepta el <strong>CSV de Shopify</strong> (fichero NURIA), sin necesidad de convertirlo.</div>
+          <div class="drop-title">Arrastra aquí uno o varios archivos, o haz clic para buscarlos</div>
+          <div class="drop-sub">El sistema detecta qué cargar por el nombre de la pestaña y, si no la reconoce, por el nombre del archivo. Se procesan en orden, uno detrás de otro. También acepta el <strong>CSV de Shopify</strong> sin convertirlo.</div>
         </div>
 
         <div class="xl-progress" id="xl-progress" style="display:none">
@@ -1491,7 +1491,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
             <div class="xl-sheet-row"><span class="sheet-name">📊 PRESUPUESTO NOMINAS</span><span class="sheet-count" id="xl-pnom-count">Esperando...</span><span class="sheet-wait" id="xl-pnom-ico">○</span></div>
             <div class="xl-sheet-row"><span class="sheet-name">🎫 CODETICKETS (visitas)</span><span class="sheet-count" id="xl-vi-count">Esperando...</span><span class="sheet-wait" id="xl-vi-ico">○</span></div>
             <div class="xl-sheet-row"><span class="sheet-name">🍽️ COVERMANAGER (comensales)</span><span class="sheet-count" id="xl-co-count">Esperando...</span><span class="sheet-wait" id="xl-co-ico">○</span></div>
-            <div class="xl-sheet-row"><span class="sheet-name">🛍️ NURIA (ecommerce Shopify)</span><span class="sheet-count" id="xl-eco-count">Esperando...</span><span class="sheet-wait" id="xl-eco-ico">○</span></div>
+            <div class="xl-sheet-row"><span class="sheet-name">🛍️ SHOPIFY (ecommerce)</span><span class="sheet-count" id="xl-eco-count">Esperando...</span><span class="sheet-wait" id="xl-eco-ico">○</span></div>
           </div>
           <div id="xl-msg" style="margin-top:12px;font-size:13px;font-weight:500;text-align:center"></div>
         </div>
@@ -1663,7 +1663,7 @@ const DB = {
 <script>
 // app.js — Lógica principal · Ratios Food Cost · Bonita Menorca
 // Versión del build: visible en la barra lateral y en consola para diagnosticar cachés.
-const APP_VERSION = '2026-08-16.2';
+const APP_VERSION = '2026-08-17.1';
 console.log('Ratios Food Cost · build', APP_VERSION);
 
 // ── Corte Dijit → App Compras ────────────────────────────────────
@@ -6528,18 +6528,53 @@ function xlDate(val) {
   // String — usar parseFecha normal
   return parseFecha(String(val));
 }
-async function handleXlFile(file) {
-  if (!file) return;
+// Punto de entrada del uploader general. Acepta uno o varios ficheros: desde
+// 08/2026 cada pestaña viaja en su propio Excel (AGORA.xlsx, COMPRAS.xlsx...),
+// así que Dakota o Sonia sueltan los suyos de golpe. Se procesan EN SERIE — no
+// en paralelo — porque cada uno borra y reinserta sus tablas en Supabase y dos
+// cargas simultáneas podrían pisarse.
+async function handleXlFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (files.length === 0) return;
+  const input = document.getElementById('xl-input');
+  if (files.length === 1) {
+    await handleXlFile(files[0]);
+    if (input) input.value = '';
+    return;
+  }
+  const lineas = [];
+  for (let i = 0; i < files.length; i++) {
+    const cargados = await handleXlFile(files[i], {indice: i+1, total: files.length});
+    lineas.push(`${cargados && cargados.length ? '✓' : '⚠'} ${files[i].name}: `
+      + (cargados && cargados.length ? cargados.join(' · ') : 'no se ha cargado nada'));
+  }
+  // Resumen acumulado: si no, cada fichero pisaría el mensaje del anterior y
+  // solo quedaría visible el resultado del último.
+  const msg = document.getElementById('xl-msg');
+  msg.style.whiteSpace = 'pre-line';
+  msg.textContent = lineas.join('\n');
+  msg.style.color = lineas.every(l => l.startsWith('✓')) ? 'var(--green)' : 'var(--orange,#BA7517)';
+  if (input) input.value = '';
+}
+
+// Procesa UN fichero. Devuelve el array de descripciones de lo cargado (para el
+// resumen multi-fichero) o null si no se ha podido procesar.
+// opts: {indice, total} cuando forma parte de una carga múltiple.
+async function handleXlFile(file, opts) {
+  if (!file) return null;
   const ext = file.name.split('.').pop().toLowerCase();
   if (!['xlsx','xls','csv'].includes(ext)) {
     alert('Formato no válido. Usa .xlsx, .xls o .csv');
-    return;
+    return null;
   }
+  const prefijo = opts ? `[${opts.indice}/${opts.total}] ${file.name} · ` : '';
+  const esUltimo = !opts || opts.indice === opts.total;
 
   // Mostrar panel de progreso
   document.getElementById('xl-progress').style.display = 'block';
   document.getElementById('xl-bar').style.width = '0%';
-  document.getElementById('xl-msg').textContent = '';
+  document.getElementById('xl-msg').style.whiteSpace = 'normal';
+  document.getElementById('xl-msg').textContent = prefijo;
   ['ing','gas','comp','ppto','rrhh','pa','pd','eco'].forEach(k => {
     const cnt = document.getElementById('xl-'+k+'-count');
     const ico = document.getElementById('xl-'+k+'-ico');
@@ -6561,49 +6596,84 @@ async function handleXlFile(file) {
   } catch(e) {
     document.getElementById('xl-msg').textContent = '⚠ Error al leer el archivo: ' + e.message;
     document.getElementById('xl-msg').style.color = 'var(--red)';
-    return;
+    return null;
   }
 
-  // Detección automática de qué hojas trae este Excel.
-  // Las cargas pueden ser parciales: cada persona sube solo sus pestañas.
-  //   Dakota          → AGORA + DIJIT
-  //   Silvia          → SKELLO + NOMINAS
-  //   Luis/Patricia   → PRESUPUESTO INGRESOS + PRESUPUESTO NOMINAS
-  //   Sonia           → COVERMANAGER + CODETICKETS (+ históricos 2025)
-  // Cada parser ya detecta si su hoja existe; aquí solo validamos que haya algo
-  // que procesar y mostramos un resumen claro al usuario.
-  const HOJAS_CONOCIDAS = {
+  // ── Detección de qué pestañas trae este fichero ────────────────────────────
+  // El reparto se hace SIEMPRE por nombre de pestaña, nunca por quién sube el
+  // fichero. Las cargas son parciales por diseño: cada fichero trae lo suyo y
+  // se reemplaza únicamente eso; lo que no viene se queda intacto.
+  //
+  // Desde 08/2026 el convenio es "un fichero por pestaña, el fichero se llama
+  // como la pestaña": AGORA.xlsx, DIJIT.xlsx, COMPRAS.xlsx, NOMINAS.xlsx,
+  // PRESUPUESTO INGRESOS.xlsx, PRESUPUESTO NOMINAS.xlsx, CODETICKETS.xlsx,
+  // COVERMANAGER.xlsx y el CSV de Shopify. Por eso hay dos niveles:
+  //   1. Por nombre de pestaña, normalizado (mayúsculas, acentos, espacios).
+  //   2. Si NINGUNA pestaña se reconoce, por nombre de FICHERO: se bautiza con
+  //      él la primera hoja del libro. Así un AGORA.xlsx cuya pestaña se llama
+  //      "Hoja1" (lo que pone Excel por defecto al crear un libro nuevo) carga
+  //      igual en vez de fallar en silencio.
+  // El nivel 2 solo actúa si el 1 no encuentra nada, así que los ficheros
+  // multi-pestaña de siempre siguen comportándose exactamente igual.
+
+  // Pestañas de nombre fijo → etiqueta legible.
+  const HOJAS_FIJAS = {
     'AGORA':                 'Ágora (ventas)',
     'DIJIT':                 'Dijit (compras hasta el corte)',
     'COMPRAS':               'App Compras (desde el corte)',
     'PRESUPUESTO INGRESOS':  'Presupuesto ingresos',
     'PRESUPUESTO':           'Presupuesto ingresos (formato antiguo)',
-    'SKELLO':                'Skello (horas)',
     'NOMINAS':               'Nóminas',
     'PRESUPUESTO NOMINAS':   'Presupuesto nóminas',
-    'CODETICKETS':           'Codetickets (visitas)',
-    'COVERMANAGER 2026':     'Covermanager 2026 (comensales)',
-    'COVERMANAGER 2025':     'Covermanager 2025 (comensales histórico)',
-    'CODETICKETS 2025':      'Codetickets 2025 (visitas histórico)',
-    'INGRESOS 2024':         'Ingresos 2024 (histórico)',
-    'INGRESOS 2025':         'Ingresos 2025 (histórico)',
   };
-  // Resolución tolerante a mayúsculas/minúsculas y espacios: la App Compras
-  // exporta la hoja como "Compras" y Dakota puede renombrarla al pegarla.
-  // Devuelve el nombre REAL de la hoja en el fichero, o null.
-  const hojaReal = (canon) => wb.SheetNames.find(x => x.trim().toUpperCase() === canon) || null;
-  const hojaCompras = hojaReal('COMPRAS');
-  const hojaDijit   = hojaReal('DIJIT');
-  const hojasPresentes = wb.SheetNames.filter(n => HOJAS_CONOCIDAS[n]);
-  // Añadimos DIJIT y COMPRAS por su nombre canónico si se han encontrado con
-  // otra grafía, para que el guard del catálogo y el resumen los vean.
-  if (hojaDijit   && !hojasPresentes.includes('DIJIT'))   hojasPresentes.push('DIJIT');
-  if (hojaCompras && !hojasPresentes.includes('COMPRAS')) hojasPresentes.push('COMPRAS');
-  const ecoSheetDetectada = findEcommerceSheet(wb);   // detección por firma de columnas (fichero NURIA)
+  // Pestañas con año: se aceptan CON y SIN año. El año del nombre es meramente
+  // informativo — el año real de cada fila se deduce siempre de su fecha. Antes
+  // los años estaban escritos a mano en la lista de pestañas conocidas, así que
+  // en enero de 2027 un COVERMANAGER 2027 suelto se habría rechazado entero.
+  const etiquetaHoja = (c) => {
+    if (HOJAS_FIJAS[c]) return HOJAS_FIJAS[c];
+    let m;
+    if ((m = c.match(/^CODETICKETS( \d{4})?$/)))  return 'Codetickets (visitas)'    + (m[1] ? ' ' + m[1].trim() : '');
+    if ((m = c.match(/^COVERMANAGER( \d{4})?$/))) return 'Covermanager (comensales)' + (m[1] ? ' ' + m[1].trim() : '');
+    if ((m = c.match(/^INGRESOS (\d{4})$/)))      return 'Ingresos ' + m[1] + ' (histórico)';
+    return null;
+  };
+  // Normalizador: sin acentos, sin espacios de más, en mayúsculas.
+  // "Ágora" → "AGORA", "  Presupuesto   Nominas " → "PRESUPUESTO NOMINAS".
+  const canonNombre = (s) => String(s||'')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .trim().toUpperCase().replace(/\s+/g, ' ');
+
+  // SH: nombre canónico de pestaña → nombre REAL de la hoja dentro del libro.
+  // Todos los parsers leen de aquí, nunca de wb.SheetNames directamente.
+  const SH = {};
+  wb.SheetNames.forEach(sn => {
+    const c = canonNombre(sn);
+    if (etiquetaHoja(c) && !SH[c]) SH[c] = sn;
+  });
+
+  // Nivel 2: fallback por nombre de fichero.
+  let bautizadaPorFichero = null;
+  if (Object.keys(SH).length === 0 && wb.SheetNames.length > 0) {
+    // Probamos de más tokens a menos, para que los nombres de dos palabras
+    // ganen al de una: "PRESUPUESTO NOMINAS 2026 (1).xlsx" prueba
+    // "PRESUPUESTO NOMINAS 2026 (1)" → "PRESUPUESTO NOMINAS 2026" →
+    // "PRESUPUESTO NOMINAS" ✓ (y no se queda en "PRESUPUESTO").
+    const toks = canonNombre(file.name.replace(/\.[^.]+$/, '')).split(/[\s_\-]+/).filter(Boolean);
+    for (let k = toks.length; k >= 1; k--) {
+      const cand = toks.slice(0, k).join(' ');
+      if (etiquetaHoja(cand)) { SH[cand] = wb.SheetNames[0]; bautizadaPorFichero = cand; break; }
+    }
+  }
+
+  const hojaCompras = SH['COMPRAS'] || null;
+  const hojaDijit   = SH['DIJIT']   || null;
+  const hojasPresentes = Object.keys(SH);
+  const ecoSheetDetectada = findEcommerceSheet(wb);   // detección por firma de columnas (export de Shopify)
   if (hojasPresentes.length === 0 && !ecoSheetDetectada) {
-    document.getElementById('xl-msg').textContent = '⚠ Este archivo no contiene ninguna pestaña reconocida. Pestañas esperadas: ' + Object.keys(HOJAS_CONOCIDAS).join(', ') + ', o un export de Shopify (NURIA).';
+    document.getElementById('xl-msg').textContent = '⚠ Este archivo no contiene ninguna pestaña reconocida. Nombres esperados (de pestaña o de fichero): ' + Object.keys(HOJAS_FIJAS).join(', ') + ', CODETICKETS, COVERMANAGER, INGRESOS AAAA — o un export de Shopify (SHOPIFY.csv).';
     document.getElementById('xl-msg').style.color = 'var(--red)';
-    return;
+    return null;
   }
   // ── GUARD: el catálogo debe estar cargado ANTES de parsear ventas/compras ──
   // La familia/subfamilia de cada fila se resuelve contra el catálogo en memoria.
@@ -6614,15 +6684,19 @@ async function handleXlFile(file) {
   if (hojasPresentes.includes('AGORA') && (DB.productos_agora||[]).length === 0) {
     document.getElementById('xl-msg').textContent = '⚠ El catálogo de productos Ágora aún no se ha cargado (la app sigue sincronizando o hubo un error de conexión). Espera unos segundos a que arriba ponga "✓ N registros" y vuelve a subir el archivo. Si persiste, recarga la página.';
     document.getElementById('xl-msg').style.color = 'var(--red)';
-    return;
+    return null;
   }
   if ((hojasPresentes.includes('DIJIT') || hojasPresentes.includes('COMPRAS')) && (DB.productos_dijit||[]).length === 0) {
     document.getElementById('xl-msg').textContent = '⚠ El catálogo de productos Dijit aún no se ha cargado (la app sigue sincronizando o hubo un error de conexión). Espera unos segundos a que arriba ponga "✓ N registros" y vuelve a subir el archivo. Si persiste, recarga la página.';
     document.getElementById('xl-msg').style.color = 'var(--red)';
-    return;
+    return null;
   }
   // Resumen visual de lo que se va a procesar
-  document.getElementById('xl-msg').textContent = `Detectadas ${hojasPresentes.length} pestañas: ${hojasPresentes.map(h => HOJAS_CONOCIDAS[h]).join(' · ')}`;
+  const detalleHojas = hojasPresentes.map(h => etiquetaHoja(h)).join(' · ');
+  document.getElementById('xl-msg').textContent = prefijo + (hojasPresentes.length === 0
+    ? 'Detectado export de Shopify (ecommerce)'
+    : `Detectadas ${hojasPresentes.length} pestañas: ${detalleHojas}`)
+      + (bautizadaPorFichero ? ` — identificadas por el nombre del fichero (la pestaña se llama "${wb.SheetNames[0]}")` : '');
   document.getElementById('xl-msg').style.color = '#1D9E75';
 
   document.getElementById('xl-bar').style.width = '10%';
@@ -6772,12 +6846,12 @@ async function handleXlFile(file) {
   document.getElementById('xl-ing-count').textContent = 'Procesando...';
   let ingRows = [];
   let ingHistRows = [];
-  if (wb.SheetNames.includes('AGORA')) {
+  if (SH['AGORA']) {
    try {
-    ingRows = parseIngSheet(wb.Sheets['AGORA']);
+    ingRows = parseIngSheet(wb.Sheets[SH['AGORA']]);
     // Pestañas históricas opcionales (INGRESOS 2024, INGRESOS 2025, etc.)
     // → van a ingresos_historico, nunca se borran en cargas normales
-    const histSheets = wb.SheetNames.filter(n => /^INGRESOS \d{4}$/.test(n));
+    const histSheets = hojasPresentes.filter(c => /^INGRESOS \d{4}$/.test(c)).map(c => SH[c]);
     for (const hs of histSheets) {
       ingHistRows = ingHistRows.concat(parseIngSheet(wb.Sheets[hs]));
     }
@@ -6795,7 +6869,7 @@ async function handleXlFile(file) {
     document.getElementById('xl-ing-count').textContent = 'No incluida';
     document.getElementById('xl-ing-ico').textContent = '—';
     // Aun así miramos los históricos por si vienen sueltos en este archivo
-    const histSheets = wb.SheetNames.filter(n => /^INGRESOS \d{4}$/.test(n));
+    const histSheets = hojasPresentes.filter(c => /^INGRESOS \d{4}$/.test(c)).map(c => SH[c]);
     if (histSheets.length > 0) {
       try {
         for (const hs of histSheets) {
@@ -7010,9 +7084,7 @@ async function handleXlFile(file) {
   const pptoRows = [];
   // Aceptamos el nombre nuevo "PRESUPUESTO INGRESOS" o el antiguo "PRESUPUESTO" por
   // compatibilidad temporal (durante la migración).
-  const pptoSheetName = wb.SheetNames.includes('PRESUPUESTO INGRESOS')
-    ? 'PRESUPUESTO INGRESOS'
-    : (wb.SheetNames.includes('PRESUPUESTO') ? 'PRESUPUESTO' : null);
+  const pptoSheetName = SH['PRESUPUESTO INGRESOS'] || SH['PRESUPUESTO'] || null;
   if (pptoSheetName) {
    try {
     const ws = wb.Sheets[pptoSheetName];
@@ -7095,9 +7167,9 @@ async function handleXlFile(file) {
   //       AF=LIQUIDO A PERCIBIR, AK=TOTAL COSTE SS, AL=COSTE TOTAL, AM=CONCEPTO
   document.getElementById('xl-nm-count').textContent = 'Procesando...';
   const nomRows = [];
-  if (wb.SheetNames.includes('NOMINAS')) {
+  if (SH['NOMINAS']) {
     try {
-      const ws = wb.Sheets['NOMINAS'];
+      const ws = wb.Sheets[SH['NOMINAS']];
       const data = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:""});
       for (let i = 1; i < data.length; i++) {
         const cols = data[i];
@@ -7151,9 +7223,9 @@ async function handleXlFile(file) {
   // La transformamos en filas {canal, depto, mes, importe}
   document.getElementById('xl-pnom-count').textContent = 'Procesando...';
   const pnomRows = [];
-  if (wb.SheetNames.includes('PRESUPUESTO NOMINAS')) {
+  if (SH['PRESUPUESTO NOMINAS']) {
     try {
-      const ws = wb.Sheets['PRESUPUESTO NOMINAS'];
+      const ws = wb.Sheets[SH['PRESUPUESTO NOMINAS']];
       const data = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:""});
       // data[0] = cabecera: ['CANAL','DEPARTAMENTO',1,2,3,...,12]
       // data[1..] = filas de canal/depto + 12 valores
@@ -7195,7 +7267,7 @@ async function handleXlFile(file) {
   // Usamos la fecha real para clasificar año (no el nombre de pestaña).
   document.getElementById('xl-vi-count').textContent = 'Procesando...';
   const visRows = [];
-  const visSheets = wb.SheetNames.filter(s => /^CODETICKETS(\s*\d{4})?$/i.test(s));
+  const visSheets = hojasPresentes.filter(c => /^CODETICKETS( \d{4})?$/.test(c)).map(c => SH[c]);
   if (visSheets.length > 0) {
     try {
       // Helper local: clasificar evento → tipo + idioma
@@ -7303,7 +7375,7 @@ async function handleXlFile(file) {
   // un centro con capacidad>0 en algún día del mismo año (sino, la pestaña ese centro no estaba operativo).
   document.getElementById('xl-co-count').textContent = 'Procesando...';
   const coRows = [];
-  const coSheets = wb.SheetNames.filter(s => /^COVERMANAGER\s*\d{4}$/i.test(s));
+  const coSheets = hojasPresentes.filter(c => /^COVERMANAGER( \d{4})?$/.test(c)).map(c => SH[c]);
   if (coSheets.length > 0) {
     try {
       // Helper local: parsear fecha — Date, serial, o string DD/MM/YYYY
@@ -7419,7 +7491,7 @@ async function handleXlFile(file) {
   }
 
   // ── Guardar en Supabase ──
-  document.getElementById('xl-msg').textContent = 'Guardando en base de datos...';
+  document.getElementById('xl-msg').textContent = prefijo + 'Guardando en base de datos...';
   document.getElementById('xl-msg').style.color = '#888';
   try {
     setSyncStatus('Guardando...', '#BA7517');
@@ -7561,21 +7633,23 @@ async function handleXlFile(file) {
     if (coRows.length > 0)      cargados.push(`${coRows.length.toLocaleString('es-ES',{useGrouping:'always'})} comensales${etiqRango(coRows)}`);
     if (ecoRows.length > 0)     cargados.push(`${ecoRows.length.toLocaleString('es-ES',{useGrouping:'always'})} pedidos ecommerce`);
     if (ingHistRows.length > 0) cargados.push(`${ingHistRows.length.toLocaleString('es-ES',{useGrouping:'always'})} ing. históricos`);
-    document.getElementById('xl-msg').textContent = `✓ Cargado: ${cargados.join(' · ')}${prodWarning}`;
+    document.getElementById('xl-msg').textContent = prefijo + `✓ Cargado: ${cargados.join(' · ')}${prodWarning}`;
     document.getElementById('xl-msg').style.color = prodWarning ? 'var(--orange,#BA7517)' : 'var(--green)';
     setSyncStatus('✓ Excel cargado', '#1D9E75');
     setTimeout(() => setSyncStatus('', '#888'), 3000);
-    document.getElementById('xl-input').value = '';
     // Refrescamos la pestaña activa (si Sonia sube Covermanager le interesa ver
     // Comensales, si Silvia sube Skello le interesa ver RRHH, etc.)
     // Y el dashboard también, porque suele ser lo siguiente que mire el usuario.
-    renderAll();
-    renderDashboard();
+    // En carga múltiple solo repintamos al terminar el último fichero: repintar
+    // los gráficos entre ficheros es puro coste sin nada que mirar.
+    if (esUltimo) { renderAll(); renderDashboard(); }
+    return cargados;
 
   } catch(e) {
-    document.getElementById('xl-msg').textContent = '⚠ Error al guardar: ' + e.message;
+    document.getElementById('xl-msg').textContent = prefijo + '⚠ Error al guardar: ' + e.message;
     document.getElementById('xl-msg').style.color = 'var(--red)';
     setSyncStatus('⚠ Error al guardar', '#A32D2D');
+    return null;
   }
 }
 
