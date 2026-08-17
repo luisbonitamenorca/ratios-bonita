@@ -1477,7 +1477,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
           ondrop="event.preventDefault();this.classList.remove('drag-over');handleXlFiles(event.dataTransfer.files)">
           <div class="drop-icon">📊</div>
           <div class="drop-title">Arrastra aquí uno o varios archivos, o haz clic para buscarlos</div>
-          <div class="drop-sub">El sistema detecta qué cargar por el nombre de la pestaña y, si no la reconoce, por el nombre del archivo. Se procesan en orden, uno detrás de otro. También acepta el <strong>CSV de Shopify</strong> sin convertirlo.</div>
+          <div class="drop-sub">Puedes soltar los <strong>exports originales tal y como salen</strong> de Ágora, la App Compras, CoverManager o Shopify: se identifican por sus columnas, sin renombrar nada. Se procesan en orden, uno detrás de otro.</div>
         </div>
 
         <div class="xl-progress" id="xl-progress" style="display:none">
@@ -1663,7 +1663,7 @@ const DB = {
 <script>
 // app.js — Lógica principal · Ratios Food Cost · Bonita Menorca
 // Versión del build: visible en la barra lateral y en consola para diagnosticar cachés.
-const APP_VERSION = '2026-08-17.1';
+const APP_VERSION = '2026-08-17.3';
 console.log('Ratios Food Cost · build', APP_VERSION);
 
 // ── Corte Dijit → App Compras ────────────────────────────────────
@@ -6588,7 +6588,12 @@ async function handleXlFile(file, opts) {
   try {
     if (ext === 'csv') {
       const text = await file.text();
-      wb = XLSX.read(text, {type:'string', cellDates:true});
+      // OJO: nada de cellDates aquí. SheetJS interpreta las fechas sueltas de un
+      // CSV como MM-DD-YYYY, así que el "02-01-2026" de CoverManager (2 de enero)
+      // se convertía en 1 de febrero — y solo en los días 1-12, con lo que el
+      // destrozo era parcial e invisible. Con raw:true todo llega como texto y
+      // lo interpreta el parser de cada origen, que sí sabe que es DD-MM-YYYY.
+      wb = XLSX.read(text, {type:'string', raw:true});
     } else {
       const buf = await file.arrayBuffer();
       wb = XLSX.read(buf, {type:'array', cellDates:true});
@@ -6652,7 +6657,44 @@ async function handleXlFile(file, opts) {
     if (etiquetaHoja(c) && !SH[c]) SH[c] = sn;
   });
 
-  // Nivel 2: fallback por nombre de fichero.
+  // HDR: nombre canónico → índice de la fila de cabecera dentro de la hoja.
+  // Casi siempre 0, pero los exports originales meten líneas de título antes.
+  const HDR = {};
+
+  // ── Nivel 2: detección por firma de columnas ──
+  // Los exports tal y como salen de cada herramienta traen nombres de pestaña
+  // que no dicen nada ("Ventas por Producto y Local", "Sheet1", "Contacts"), así
+  // que cuando el nombre no identifica nada miramos DENTRO: si la cabecera
+  // coincide con la firma de un origen conocido, queda identificado igual. Es el
+  // mismo criterio que ya usaba la detección de Shopify, generalizado.
+  // Ventaja operativa: nadie tiene que renombrar el fichero ni la pestaña.
+  const sinAcentos = (x) => String(x||'')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  const FIRMAS = [
+    { canon: 'AGORA',        req: ['fecha', 'local', 'id producto', 'cantidad'] },
+    { canon: 'COMPRAS',      req: ['fecha', 'proveedor', 'cod. app', 'importe'] },
+    { canon: 'DIJIT',        req: ['fecha albaran', 'id interno producto', 'monto', 'proyecto'] },
+    { canon: 'NOMINAS',      req: ['ano periodo', 'mes periodo', 'centro de trabajo'] },
+    { canon: 'COVERMANAGER', req: ['capacidad maxima', '% ocupacion', 'total'] },
+    { canon: 'CODETICKETS',  req: ['fecha evento', 'nombre evento'] },
+  ];
+  const FILAS_CABECERA = 12;   // hasta qué fila buscamos la cabecera
+  const detectadasPorFirma = [];
+  wb.SheetNames.forEach(sn => {
+    if (Object.values(SH).indexOf(sn) !== -1) return;   // ya identificada por su nombre
+    let data;
+    try { data = XLSX.utils.sheet_to_json(wb.Sheets[sn], {header:1, raw:true, defval:''}); }
+    catch(_) { return; }
+    const hasta = Math.min(FILAS_CABECERA, data.length);
+    for (let i = 0; i < hasta; i++) {
+      const hdr = (data[i]||[]).map(sinAcentos);
+      if (hdr.length < 3) continue;
+      const f = FIRMAS.find(x => !SH[x.canon] && x.req.every(c => hdr.indexOf(c) !== -1));
+      if (f) { SH[f.canon] = sn; HDR[f.canon] = i; detectadasPorFirma.push(f.canon); break; }
+    }
+  });
+
+  // Nivel 3: fallback por nombre de fichero.
   let bautizadaPorFichero = null;
   if (Object.keys(SH).length === 0 && wb.SheetNames.length > 0) {
     // Probamos de más tokens a menos, para que los nombres de dos palabras
@@ -6696,7 +6738,8 @@ async function handleXlFile(file, opts) {
   document.getElementById('xl-msg').textContent = prefijo + (hojasPresentes.length === 0
     ? 'Detectado export de Shopify (ecommerce)'
     : `Detectadas ${hojasPresentes.length} pestañas: ${detalleHojas}`)
-      + (bautizadaPorFichero ? ` — identificadas por el nombre del fichero (la pestaña se llama "${wb.SheetNames[0]}")` : '');
+      + (bautizadaPorFichero ? ` — identificada por el nombre del fichero (la pestaña se llama "${wb.SheetNames[0]}")` : '')
+      + (detectadasPorFirma.length ? ` — ${detectadasPorFirma.join(', ')} identificada por sus columnas (export original, sin renombrar)` : '');
   document.getElementById('xl-msg').style.color = '#1D9E75';
 
   document.getElementById('xl-bar').style.width = '10%';
@@ -6705,10 +6748,10 @@ async function handleXlFile(file, opts) {
   // Columnas: FECHA · CANAL · ID PRODUCTO · PRODUCTO · CANTIDAD · BASE · TOTAL
   // Familia, subfamilia y factor se resuelven desde el catálogo de productos.
   // Unidades = CANTIDAD × FACTOR (calculadas aquí, ya no vienen en el Excel).
-  function parseIngSheet(ws) {
+  function parseIngSheet(ws, filaCabecera) {
     const result = [];
     const data = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:""});
-    for (let i = 1; i < data.length; i++) {
+    for (let i = (filaCabecera||0) + 1; i < data.length; i++) {
       const cols = data[i];
       if (!cols || !cols[0] || !cols[1]) continue;
       const [fecha, canal, articulo, descripcion, cantidad, base, total] = cols;
@@ -6848,7 +6891,7 @@ async function handleXlFile(file, opts) {
   let ingHistRows = [];
   if (SH['AGORA']) {
    try {
-    ingRows = parseIngSheet(wb.Sheets[SH['AGORA']]);
+    ingRows = parseIngSheet(wb.Sheets[SH['AGORA']], HDR['AGORA']);
     // Pestañas históricas opcionales (INGRESOS 2024, INGRESOS 2025, etc.)
     // → van a ingresos_historico, nunca se borran en cargas normales
     const histSheets = hojasPresentes.filter(c => /^INGRESOS \d{4}$/.test(c)).map(c => SH[c]);
@@ -7262,13 +7305,25 @@ async function handleXlFile(file, opts) {
   }
 
   // ── Parsear CODETICKETS (opcional) ──
-  // Acepta "CODETICKETS" (formato nuevo, una sola pestaña) o "CODETICKETS 2025/2026" (formato antiguo, una por año).
-  // Cols: A=Fecha evento (datetime), B=Nombre evento, C=Canal, D=RRPP (ignorada), E=Entradas vendidas
-  // Usamos la fecha real para clasificar año (no el nombre de pestaña).
+  // Se aceptan DOS formatos, y las columnas se localizan por su nombre, no por
+  // su posición, porque no coinciden entre uno y otro:
+  //   a) El export original de Codetickets ("INFORME INGRESOS POR TARIFAS"), con
+  //      líneas de título antes de la cabecera y una fila por tarifa:
+  //      Fecha evento · Nombre evento · Tarifa · Método de pago · RRPP · Precio ·
+  //      Comisión · Entradas · …y filas de totales al final.
+  //   b) El formato reformateado a mano que se venía usando:
+  //      Fecha evento · Nombre evento · Canal de venta · RRPP · Entradas vendidas
+  // El año sale siempre de la fecha real de cada fila, nunca del nombre de la pestaña.
   document.getElementById('xl-vi-count').textContent = 'Procesando...';
   const visRows = [];
-  const visSheets = hojasPresentes.filter(c => /^CODETICKETS( \d{4})?$/.test(c)).map(c => SH[c]);
-  if (visSheets.length > 0) {
+  // Eventos que NO son visitas y no deben contar aquí. MENORC4MANOS fue un evento
+  // puntual (agosto 2026) facturado en el Ágora de Binifadet Restaurante; en
+  // Codetickets solo se usó para gestionar la reserva, así que contarlo como
+  // entradas duplicaría el evento en los cuadros de visitas.
+  const CT_EVENTOS_EXCLUIDOS = ['MENORC4MANOS'];
+  let ctExcluidas = 0, ctSinMetodo = 0;
+  const visCanons = hojasPresentes.filter(c => /^CODETICKETS( \d{4})?$/.test(c));
+  if (visCanons.length > 0) {
     try {
       // Helper local: clasificar evento → tipo + idioma
       const clasificarEvento = (nombre) => {
@@ -7306,20 +7361,50 @@ async function handleXlFile(file, opts) {
         const yearStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
         return Math.ceil((((t - yearStart) / 86400000) + 1) / 7);
       };
+      // El export original trae el método de pago, no el canal. La equivalencia
+      // se validó contra el fichero reformateado de 2026: tarjeta + efectivo
+      // cuadraban exactamente con TAQUILLA (96) y "--- ---" con INVITACIONES (7).
+      const canalDesdeMetodo = (v) => {
+        const t = String(v||'').trim().toUpperCase();
+        if (!t || /^-+$/.test(t.replace(/\s/g,''))) return t ? 'INVITACIONES' : '';
+        if (t.includes('ONLINE')) return 'ONLINE';
+        if (t.includes('TARJETA') || t.includes('EFECTIVO')) return 'TAQUILLA';
+        return t;   // cualquier método nuevo se ve tal cual en vez de perderse
+      };
       const seenIds = new Set();
-      visSheets.forEach(sheetName => {
+      visCanons.forEach(canonCT => {
+        const sheetName = SH[canonCT];
         const ws = wb.Sheets[sheetName];
         const data = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:""});
-        for (let i = 1; i < data.length; i++) {
+        const filaHdr = HDR[canonCT] || 0;
+        const hdr = (data[filaHdr]||[]).map(h => String(h||'')
+          .normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase());
+        const col = (...nombres) => {
+          for (const n of nombres) { const i = hdr.indexOf(n); if (i !== -1) return i; }
+          return -1;
+        };
+        // Posiciones por nombre, con las del formato reformateado como respaldo
+        // por si algún fichero antiguo viniera sin cabecera reconocible.
+        const cFecha  = col('fecha evento');                              const iFecha  = cFecha  === -1 ? 0 : cFecha;
+        const cNombre = col('nombre evento');                             const iNombre = cNombre === -1 ? 1 : cNombre;
+        const cCanal  = col('canal de venta', 'metodo de pago', 'canal'); const iCanal  = cCanal  === -1 ? 2 : cCanal;
+        const cEntr   = col('entradas vendidas', 'entradas');             const iEntr   = cEntr   === -1 ? 4 : cEntr;
+        const esBruto = cCanal !== -1 && hdr[cCanal] === 'metodo de pago';
+        for (let i = filaHdr + 1; i < data.length; i++) {
           const cols = data[i];
-          if (!cols || !cols[0]) continue;
-          const fecha = parseFechaCT(cols[0]);
-          if (!fecha || isNaN(fecha.getTime())) continue;
-          const nombre = (cols[1]||'').toString().trim();
+          if (!cols || !cols[iFecha]) continue;
+          const fecha = parseFechaCT(cols[iFecha]);
+          if (!fecha || isNaN(fecha.getTime())) continue;   // descarta los totales del pie
+          const nombre = (cols[iNombre]||'').toString().trim();
           if (!nombre) continue;
-          const canal = (cols[2]||'').toString().trim().toUpperCase();
-          const entradas = parseInt(cols[4])||0;
+          const entradas = parseInt(cols[iEntr])||0;
           if (entradas === 0) continue;
+          const nombreNorm = nombre.toUpperCase();
+          if (CT_EVENTOS_EXCLUIDOS.some(ev => nombreNorm.includes(ev))) { ctExcluidas += entradas; continue; }
+          const crudo = (cols[iCanal]||'').toString().trim();
+          if (esBruto && !crudo) ctSinMetodo += entradas;
+          // Sin método de pago solo aparecen devoluciones de venta online.
+          const canal = esBruto ? (canalDesdeMetodo(crudo) || 'ONLINE') : crudo.toUpperCase();
           // Deduplicación por fila (por si CT2025 y CT2026 tienen filas solapadas)
           const dedupKey = `${fecha.toISOString().slice(0,10)}|${nombre}|${canal}|${entradas}|${i}|${sheetName}`;
           if (seenIds.has(dedupKey)) continue;
@@ -7343,7 +7428,9 @@ async function handleXlFile(file, opts) {
           });
         }
       });
-      document.getElementById('xl-vi-count').textContent = visRows.length + ' filas';
+      document.getElementById('xl-vi-count').textContent = visRows.length + ' filas'
+        + (ctExcluidas ? ` · ${ctExcluidas} entradas de eventos excluidos (${CT_EVENTOS_EXCLUIDOS.join(', ')})` : '')
+        + (ctSinMetodo ? ` · ${ctSinMetodo} sin método de pago → ONLINE` : '');
       document.getElementById('xl-vi-ico').textContent = '✓';
       document.getElementById('xl-vi-ico').className = 'sheet-ok';
     } catch(e) {
@@ -7375,8 +7462,8 @@ async function handleXlFile(file, opts) {
   // un centro con capacidad>0 en algún día del mismo año (sino, la pestaña ese centro no estaba operativo).
   document.getElementById('xl-co-count').textContent = 'Procesando...';
   const coRows = [];
-  const coSheets = hojasPresentes.filter(c => /^COVERMANAGER( \d{4})?$/.test(c)).map(c => SH[c]);
-  if (coSheets.length > 0) {
+  const coCanons = hojasPresentes.filter(c => /^COVERMANAGER( \d{4})?$/.test(c));
+  if (coCanons.length > 0) {
     try {
       // Helper local: parsear fecha — Date, serial, o string DD/MM/YYYY
       const parseFechaCO = (v) => {
@@ -7402,10 +7489,11 @@ async function handleXlFile(file, opts) {
         { idx: 8,  capIdx: 9,  centro: 'TAMARINDOS BAR' },
         { idx: 11, capIdx: 12, centro: 'TIRANT' },
       ];
-      coSheets.forEach(sheetName => {
+      coCanons.forEach(canonCO => {
+        const sheetName = SH[canonCO];
         const ws = wb.Sheets[sheetName];
         const data = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:""});
-        for (let i = 1; i < data.length; i++) {
+        for (let i = (HDR[canonCO]||0) + 1; i < data.length; i++) {
           const cols = data[i];
           if (!cols || cols.length === 0) continue;
           const fecha = parseFechaCO(cols[0]);
